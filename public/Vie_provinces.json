@@ -1,0 +1,35 @@
+{
+    "Hà Nội": [
+      { "name": "Đông Anh", "population": 400000 },
+      { "name": "Gia Lâm", "population": 350000 },
+      { "name": "Sóc Sơn", "population": 300000 },
+      { "name": "Thanh Trì", "population": 450000 },
+      { "name": "Hoài Đức", "population": 280000 }
+    ],
+    "Hồ Chí Minh": [
+      { "name": "Bình Chánh", "population": 700000 },
+      { "name": "Hóc Môn", "population": 550000 },
+      { "name": "Thủ Đức", "population": 600000 },
+      { "name": "Nhà Bè", "population": 380000 }
+    ],
+    "Đà Nẵng": [
+      { "name": "Hải Châu", "population": 220000 },
+      { "name": "Cẩm Lệ", "population": 180000 },
+      { "name": "Liên Chiểu", "population": 200000 },
+      { "name": "Thanh Khê", "population": 250000 }
+    ],
+    "Bình Dương": [
+      { "name": "Thủ Dầu Một", "population": 350000 },
+      { "name": "Dĩ An", "population": 420000 },
+      { "name": "Thuận An", "population": 480000 },
+      { "name": "Bến Cát", "population": 300000 },
+      { "name": "Tân Uyên", "population": 320000 },
+      { "name": "Bắc Tân Uyên", "population": 150000 }
+    ],
+    "Khánh Hòa": [
+      { "name": "Nha Trang", "population": 550000 },
+      { "name": "Cam Ranh", "population": 250000 },
+      { "name": "Ninh Hòa", "population": 200000 },
+      { "name": "Vạn Ninh", "population": 150000 }
+    ]
+  }

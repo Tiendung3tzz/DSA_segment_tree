@@ -1,0 +1,19 @@
+{
+    "Hà Nội": [
+      { "name": "Đông Anh", "population": 400000 },
+      { "name": "Gia Lâm", "population": 350000 },
+      { "name": "Sóc Sơn", "population": 300000 },
+      { "name": "Hoài Đức", "population": 280000 }
+    ],
+    "Hồ Chí Minh": [
+      { "name": "Bình Chánh", "population": 700000 },
+      { "name": "Hóc Môn", "population": 550000 },
+      { "name": "Thủ Đức", "population": 600000 },
+      { "name": "Nhà Bè", "population": 380000 }
+    ],
+    "Đà Nẵng": [
+      { "name": "Hải Châu", "population": 220000 },
+      { "name": "Cẩm Lệ", "population": 180000 },
+      { "name": "Liên Chiểu", "population": 200000 }
+    ]
+  }
