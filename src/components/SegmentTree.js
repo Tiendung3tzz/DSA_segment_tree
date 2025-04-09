@@ -1,10 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 
-const MAX = 1000;
-let tree = new Array(MAX).fill(0);
-let lazy = new Array(MAX).fill(0);
-
 // Hàm xác định phép toán kết hợp cho cây phân đoạn
 const combine = (a, b, type) => {
     if (type === 'sum') {
@@ -17,7 +13,7 @@ const combine = (a, b, type) => {
     return 0; // Default to sum if type is not recognized
 };
 
-function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], highlight = [], originalLocations, treeType) {
+function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], highlight = [], originalLocations, treeType, currentTree) {
     if (ss > se) return;
     const node = {
         id: si,
@@ -34,7 +30,7 @@ function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], high
         node.value = arr[ss];
         node.name = `[${ss}] = ${arr[ss]}`;
         node.status = 'completed';
-        tree[si] = arr[ss];
+        currentTree[si] = arr[ss];
         steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [] });
         return;
     }
@@ -43,14 +39,14 @@ function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], high
     const mid = Math.floor((ss + se) / 2);
     const leftChildIndex = si * 2 + 1;
     const rightChildIndex = si * 2 + 2;
-    constructSTUtil(arr, ss, mid, leftChildIndex, nodes, si, steps, [...highlight, leftChildIndex], originalLocations, treeType);
-    constructSTUtil(arr, mid + 1, se, rightChildIndex, nodes, si, steps, [...highlight, rightChildIndex], originalLocations, treeType);
+    constructSTUtil(arr, ss, mid, leftChildIndex, nodes, si, steps, [...highlight, leftChildIndex], originalLocations, treeType, currentTree);
+    constructSTUtil(arr, mid + 1, se, rightChildIndex, nodes, si, steps, [...highlight, rightChildIndex], originalLocations, treeType, currentTree);
     const leftNode = nodes.find(n => n.id === leftChildIndex);
     const rightNode = nodes.find(n => n.id === rightChildIndex);
     if (leftNode && rightNode && leftNode.status === 'completed' && rightNode.status === 'completed') {
-        tree[si] = combine(leftNode.value, rightNode.value, treeType);
-        node.value = tree[si];
-        node.name = `[${ss}:${se}] = ${tree[si]}`;
+        currentTree[si] = combine(leftNode.value, rightNode.value, treeType);
+        node.value = currentTree[si];
+        node.name = ` [${ss}:${se}] = ${currentTree[si]}`;
         node.status = 'completed';
         highlight = highlight.filter(h => h !== leftChildIndex && h !== rightChildIndex);
         steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight, si] });
@@ -59,11 +55,11 @@ function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], high
     }
 }
 
-function constructST(arr, n, nodes, steps, originalLocations, treeType) {
-    tree.fill(null); // Reset the global tree array with null
-    nodes.length = 0;
-    steps.length = 0;
-    constructSTUtil(arr, 0, n - 1, 0, nodes, null, steps, [0], originalLocations, treeType);
+function constructST(arr, n, nodes, steps, originalLocations, treeType, setGeneratedTree) {
+    const maxSize = 4 * n;
+    const currentTree = new Array(maxSize).fill(null); // Khởi tạo mảng tree cục bộ
+    constructSTUtil(arr, 0, n - 1, 0, nodes, null, steps, [0], originalLocations, treeType, currentTree);
+    setGeneratedTree(currentTree); // Cập nhật state tree
 }
 
 function buildHierarchy(nodes) {
@@ -81,7 +77,7 @@ function buildHierarchy(nodes) {
     return root;
 }
 
-function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType) {
+function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType, currentTree) {
     const currentHighlight = si !== null ? [...queryPath, si] : [...queryPath];
     const shouldHighlight = si !== null && !(se < qs || ss > qe);
     if (shouldHighlight) {
@@ -95,16 +91,16 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     }
     if (qs <= ss && se <= qe) {
         visitedNodes.add(si);
-        return tree[si];
+        return currentTree[si];
     }
     const mid = Math.floor((ss + se) / 2);
     visitedNodes.add(si);
-    const leftResult = querySTUtil(si * 2 + 1, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType);
-    const rightResult = querySTUtil(si * 2 + 2, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType);
+    const leftResult = querySTUtil(si * 2 + 1, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
+    const rightResult = querySTUtil(si * 2 + 2, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
     return combine(leftResult, rightResult, treeType);
 }
 
-function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType) {
+function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType, currentTree) {
     const currentHighlight = si !== null ? [...updatePath, si] : [...updatePath];
     const shouldHighlight = si !== null && (i >= ss && i <= se);
     if (shouldHighlight) {
@@ -120,14 +116,14 @@ function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedN
 
     visitedNodes.add(si);
     if (ss === se) {
-        tree[si] = newValue;
+        currentTree[si] = newValue;
     } else {
         const mid = Math.floor((ss + se) / 2);
-        updateSTUtil(si * 2 + 1, ss, mid, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType);
-        updateSTUtil(si * 2 + 2, mid + 1, se, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType);
+        updateSTUtil(si * 2 + 1, ss, mid, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
+        updateSTUtil(si * 2 + 2, mid + 1, se, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
         const leftChildIndex = si * 2 + 1;
         const rightChildIndex = si * 2 + 2;
-        tree[si] = combine(tree[leftChildIndex], tree[rightChildIndex], treeType);
+        currentTree[si] = combine(currentTree[leftChildIndex], currentTree[rightChildIndex], treeType);
     }
 }
 
@@ -145,6 +141,7 @@ const SegmentTreeD3 = () => {
     const [animationTimeoutId, setAnimationTimeoutId] = useState(null);
     const [constructionDelay] = useState(150);
     const [treeType, setTreeType] = useState('sum'); // Default tree type is sum
+    const [generatedTree, setGeneratedTree] = useState([]); // State để lưu trữ mảng tree đã tạo
 
     const svgRef = useRef();
     const queryProvinceRef = useRef(null);
@@ -153,7 +150,7 @@ const SegmentTreeD3 = () => {
     const [currentQueryStep, setCurrentQueryStep] = useState(0);
     const [isQuerying, setIsQuerying] = useState(false);
     const [queryAnimationTimeoutId, setQueryAnimationTimeoutId] = useState(null);
-    const [queryAnimationDelay] = useState(100);
+    const [queryAnimationDelay] = useState(1500);
 
     const [updateIndex, setUpdateIndex] = useState('');
     const [updateValue, setUpdateValue] = useState('');
@@ -161,7 +158,7 @@ const SegmentTreeD3 = () => {
     const [updateSteps, setUpdateSteps] = useState([]);
     const [currentUpdateStep, setCurrentUpdateStep] = useState(0);
     const [updateAnimationTimeoutId, setUpdateAnimationTimeoutId] = useState(null);
-    const [updateAnimationDelay] = useState(100);
+    const [updateAnimationDelay] = useState(1500);
 
     const [isProcessExpanded, setIsProcessExpanded] = useState(false);
     const [isQueryUpdateExpanded, setIsQueryUpdateExpanded] = useState(true); // Mặc định mở
@@ -179,6 +176,7 @@ const SegmentTreeD3 = () => {
         setIsUpdating(false);
         setUpdateSteps([]);
         setCurrentUpdateStep(0);
+        setGeneratedTree([]); // Reset mảng tree
         if (animationTimeoutId) clearTimeout(animationTimeoutId);
         if (queryAnimationTimeoutId) clearTimeout(queryAnimationTimeoutId);
         if (updateAnimationTimeoutId) clearTimeout(updateAnimationTimeoutId);
@@ -239,9 +237,10 @@ const SegmentTreeD3 = () => {
         resetTreeState();
         setConstructing(true);
         const arr = locations.map((loc) => loc.population);
+        const n = arr.length;
         const newNodes = [];
         const newSteps = [];
-        constructST(arr, arr.length, newNodes, newSteps, locations, treeType);
+        constructST(arr, n, newNodes, newSteps, locations, treeType, setGeneratedTree);
         setNodes(newNodes);
         setSteps(newSteps);
     };
@@ -287,7 +286,7 @@ const SegmentTreeD3 = () => {
 
         const highlightSteps = [];
         const visitedNodes = new Set();
-        const result = querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType);
+        const result = querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType, generatedTree);
         setQueryResult(result);
         setQuerySteps(highlightSteps);
         setCurrentQueryStep(0);
@@ -328,8 +327,10 @@ const SegmentTreeD3 = () => {
 
         const highlightSteps = [];
         const visitedNodes = new Set();
-        updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType);
+        const updatedTree = [...generatedTree]; // Tạo bản sao để cập nhật
+        updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType, updatedTree);
         setUpdateSteps(highlightSteps);
+        setGeneratedTree(updatedTree); // Cập nhật state tree
 
         // Cập nhật state nodes để re-render cây với giá trị mới
         const updatedNodes = nodes.map(node => {
