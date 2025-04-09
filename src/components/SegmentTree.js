@@ -1,57 +1,69 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 
 const MAX = 1000;
 let tree = new Array(MAX).fill(0);
 let lazy = new Array(MAX).fill(0);
 
-function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], highlight = [], originalLocations) {
-  if (ss > se) return;
-  const node = {
-      id: si,
-      name: `[${ss}:${se}] = ?`,
-      leafName: ss === se ? `${originalLocations[ss]?.name}: ${originalLocations[ss]?.population}` : null,
-      parent,
-      range: [ss, se],
-      value: null,
-      status: 'initial',
-  };
-  nodes.push(node);
-  steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
-  if (ss === se) {
-      node.value = arr[ss];
-      node.name = `[${ss}] = ${ arr[ss]}`;
-      node.status = 'completed';
-      tree[si] = arr[ss];
-      steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [] });
-      return;
-  }
-  node.status = 'calculating';
-  steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
-  const mid = Math.floor((ss + se) / 2);
-  const leftChildIndex = si * 2 + 1;
-  const rightChildIndex = si * 2 + 2;
-  constructSTUtil(arr, ss, mid, leftChildIndex, nodes, si, steps, [...highlight, leftChildIndex], originalLocations);
-  constructSTUtil(arr, mid + 1, se, rightChildIndex, nodes, si, steps, [...highlight, rightChildIndex], originalLocations);
-  const leftNode = nodes.find(n => n.id === leftChildIndex);
-  const rightNode = nodes.find(n => n.id === rightChildIndex);
-  if (leftNode && rightNode && leftNode.status === 'completed' && rightNode.status === 'completed') {
-      tree[si] = leftNode.value + rightNode.value;
-      node.value = tree[si];
-      node.name = `[${ss}:${se}] = ${tree[si]}`;
-      node.status = 'completed';
-      highlight = highlight.filter(h => h !== leftChildIndex && h !== rightChildIndex);
-      steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight, si] });
-  } else {
-      steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
-  }
+// Hàm xác định phép toán kết hợp cho cây phân đoạn
+const combine = (a, b, type) => {
+    if (type === 'sum') {
+        return (a === null ? 0 : a) + (b === null ? 0 : b);
+    } else if (type === 'min') {
+        if (a === null) return b;
+        if (b === null) return a;
+        return Math.min(a, b);
+    }
+    return 0; // Default to sum if type is not recognized
+};
+
+function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], highlight = [], originalLocations, treeType) {
+    if (ss > se) return;
+    const node = {
+        id: si,
+        name: `[${ss}:${se}] = ?`,
+        leafName: ss === se ? `${originalLocations[ss]?.name}: ${originalLocations[ss]?.population}` : null,
+        parent,
+        range: [ss, se],
+        value: null,
+        status: 'initial',
+    };
+    nodes.push(node);
+    steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
+    if (ss === se) {
+        node.value = arr[ss];
+        node.name = `[${ss}] = ${arr[ss]}`;
+        node.status = 'completed';
+        tree[si] = arr[ss];
+        steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [] });
+        return;
+    }
+    node.status = 'calculating';
+    steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
+    const mid = Math.floor((ss + se) / 2);
+    const leftChildIndex = si * 2 + 1;
+    const rightChildIndex = si * 2 + 2;
+    constructSTUtil(arr, ss, mid, leftChildIndex, nodes, si, steps, [...highlight, leftChildIndex], originalLocations, treeType);
+    constructSTUtil(arr, mid + 1, se, rightChildIndex, nodes, si, steps, [...highlight, rightChildIndex], originalLocations, treeType);
+    const leftNode = nodes.find(n => n.id === leftChildIndex);
+    const rightNode = nodes.find(n => n.id === rightChildIndex);
+    if (leftNode && rightNode && leftNode.status === 'completed' && rightNode.status === 'completed') {
+        tree[si] = combine(leftNode.value, rightNode.value, treeType);
+        node.value = tree[si];
+        node.name = `[${ss}:${se}] = ${tree[si]}`;
+        node.status = 'completed';
+        highlight = highlight.filter(h => h !== leftChildIndex && h !== rightChildIndex);
+        steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight, si] });
+    } else {
+        steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight] });
+    }
 }
 
-function constructST(arr, n, nodes, steps, originalLocations) {
-  tree.fill(0);
-  nodes.length = 0;
-  steps.length = 0;
-  constructSTUtil(arr, 0, n - 1, 0, nodes, null, steps, [0], originalLocations);
+function constructST(arr, n, nodes, steps, originalLocations, treeType) {
+    tree.fill(null); // Reset the global tree array with null
+    nodes.length = 0;
+    steps.length = 0;
+    constructSTUtil(arr, 0, n - 1, 0, nodes, null, steps, [0], originalLocations, treeType);
 }
 
 function buildHierarchy(nodes) {
@@ -69,7 +81,7 @@ function buildHierarchy(nodes) {
     return root;
 }
 
-function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentSum, queryPath, visitedNodes) {
+function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType) {
     const currentHighlight = si !== null ? [...queryPath, si] : [...queryPath];
     const shouldHighlight = si !== null && !(se < qs || ss > qe);
     if (shouldHighlight) {
@@ -79,7 +91,7 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentSum, queryPath, 
     }
     if (ss > qe || se < qs) {
         visitedNodes.add(si);
-        return 0;
+        return treeType === 'min' ? Infinity : 0;
     }
     if (qs <= ss && se <= qe) {
         visitedNodes.add(si);
@@ -87,12 +99,12 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentSum, queryPath, 
     }
     const mid = Math.floor((ss + se) / 2);
     visitedNodes.add(si);
-    const leftSum = querySTUtil(si * 2 + 1, ss, mid, qs, qe, highlightSteps, currentSum, currentHighlight, new Set([...visitedNodes]));
-    const rightSum = querySTUtil(si * 2 + 2, mid + 1, se, qs, qe, highlightSteps, currentSum, currentHighlight, new Set([...visitedNodes]));
-    return leftSum + rightSum;
+    const leftResult = querySTUtil(si * 2 + 1, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType);
+    const rightResult = querySTUtil(si * 2 + 2, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType);
+    return combine(leftResult, rightResult, treeType);
 }
 
-function updateSTUtil(si, ss, se, i, diff, updateSteps, updatePath, visitedNodes) {
+function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType) {
     const currentHighlight = si !== null ? [...updatePath, si] : [...updatePath];
     const shouldHighlight = si !== null && (i >= ss && i <= se);
     if (shouldHighlight) {
@@ -107,12 +119,15 @@ function updateSTUtil(si, ss, se, i, diff, updateSteps, updatePath, visitedNodes
     }
 
     visitedNodes.add(si);
-    tree[si] = tree[si] + diff;
-
-    if (ss !== se) {
+    if (ss === se) {
+        tree[si] = newValue;
+    } else {
         const mid = Math.floor((ss + se) / 2);
-        updateSTUtil(si * 2 + 1, ss, mid, i, diff, updateSteps, currentHighlight, new Set([...visitedNodes]));
-        updateSTUtil(si * 2 + 2, mid + 1, se, i, diff, updateSteps, currentHighlight, new Set([...visitedNodes]));
+        updateSTUtil(si * 2 + 1, ss, mid, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType);
+        updateSTUtil(si * 2 + 2, mid + 1, se, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType);
+        const leftChildIndex = si * 2 + 1;
+        const rightChildIndex = si * 2 + 2;
+        tree[si] = combine(tree[leftChildIndex], tree[rightChildIndex], treeType);
     }
 }
 
@@ -129,6 +144,7 @@ const SegmentTreeD3 = () => {
     const [currentConstructStep, setCurrentConstructStep] = useState(0);
     const [animationTimeoutId, setAnimationTimeoutId] = useState(null);
     const [constructionDelay] = useState(150);
+    const [treeType, setTreeType] = useState('sum'); // Default tree type is sum
 
     const svgRef = useRef();
     const queryProvinceRef = useRef(null);
@@ -137,7 +153,7 @@ const SegmentTreeD3 = () => {
     const [currentQueryStep, setCurrentQueryStep] = useState(0);
     const [isQuerying, setIsQuerying] = useState(false);
     const [queryAnimationTimeoutId, setQueryAnimationTimeoutId] = useState(null);
-    const [queryAnimationDelay] = useState(1500);
+    const [queryAnimationDelay] = useState(100);
 
     const [updateIndex, setUpdateIndex] = useState('');
     const [updateValue, setUpdateValue] = useState('');
@@ -145,81 +161,70 @@ const SegmentTreeD3 = () => {
     const [updateSteps, setUpdateSteps] = useState([]);
     const [currentUpdateStep, setCurrentUpdateStep] = useState(0);
     const [updateAnimationTimeoutId, setUpdateAnimationTimeoutId] = useState(null);
-    const [updateAnimationDelay] = useState(1500);
+    const [updateAnimationDelay] = useState(100);
 
     const [isProcessExpanded, setIsProcessExpanded] = useState(false);
     const [isQueryUpdateExpanded, setIsQueryUpdateExpanded] = useState(true); // Mặc định mở
+
+    const resetTreeState = useCallback(() => {
+        setTreeBuilt(false);
+        setNodes([]);
+        setSteps([]);
+        setQueryResult(null);
+        setQuerySteps([]);
+        setCurrentQueryStep(0);
+        setIsQuerying(false);
+        setConstructing(false);
+        setCurrentConstructStep(0);
+        setIsUpdating(false);
+        setUpdateSteps([]);
+        setCurrentUpdateStep(0);
+        if (animationTimeoutId) clearTimeout(animationTimeoutId);
+        if (queryAnimationTimeoutId) clearTimeout(queryAnimationTimeoutId);
+        if (updateAnimationTimeoutId) clearTimeout(updateAnimationTimeoutId);
+    }, [animationTimeoutId, queryAnimationTimeoutId, updateAnimationTimeoutId]);
+
     const handleFileChange = (event) => {
-      const file = event.target.files[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-              try {
-                  const fileData = e.target.result;
-                  const parsedData = JSON.parse(fileData);
-                  if (typeof parsedData === 'object' && parsedData !== null) {
-                      setProvincesData(parsedData);
-                      setTreeBuilt(false);
-                      setNodes([]);
-                      setSteps([]);
-                      setQueryResult(null);
-                      setQuerySteps([]);
-                      setCurrentQueryStep(0);
-                      setIsQuerying(false);
-                      setConstructing(false);
-                      setCurrentConstructStep(0);
-                      setIsUpdating(false);
-                      setUpdateSteps([]);
-                      setCurrentUpdateStep(0);
-                      if (animationTimeoutId) clearTimeout(animationTimeoutId);
-                      if (queryAnimationTimeoutId) clearTimeout(queryAnimationTimeoutId);
-                      if (updateAnimationTimeoutId) clearTimeout(updateAnimationTimeoutId);
-                      alert('Dữ liệu từ file JSON đã được tải thành công!');
-                  } else {
-                      alert('Nội dung file JSON không hợp lệ. Vui lòng đảm bảo file chứa một đối tượng JSON.');
-                  }
-              } catch (error) {
-                  alert('Lỗi khi đọc hoặc phân tích file JSON: ' + error.message);
-              }
-          };
-          reader.readAsText(file);
-      }
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const fileData = e.target.result;
+                    const parsedData = JSON.parse(fileData);
+                    if (typeof parsedData === 'object' && parsedData !== null) {
+                        setProvincesData(parsedData);
+                        resetTreeState();
+                        alert('Dữ liệu từ file JSON đã được tải thành công!');
+                    } else {
+                        alert('Nội dung file JSON không hợp lệ. Vui lòng đảm bảo file chứa một đối tượng JSON.');
+                    }
+                } catch (error) {
+                    alert('Lỗi khi đọc hoặc phân tích file JSON: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
     };
 
     const handleAddDistrict = () => {
-      if (currentProvince && currentDistrictName && !isNaN(currentDistrictPopulation)) {
-          setProvincesData(prevData => {
-              const newData = { ...prevData };
-              const newDistrict = { name: currentDistrictName, population: Number(currentDistrictPopulation) };
-  
-              if (newData[currentProvince]) {
-                  // Tỉnh đã tồn tại, tạo bản sao của mảng huyện và thêm huyện mới
-                  newData[currentProvince] = [...newData[currentProvince], newDistrict];
-              } else {
-                  // Tỉnh chưa tồn tại, tạo một mảng mới chứa huyện mới
-                  newData[currentProvince] = [newDistrict];
-              }
-              return newData;
-          });
-          setCurrentDistrictName('');
-          setCurrentDistrictPopulation('');
-          setTreeBuilt(false);
-          setNodes([]);
-          setSteps([]);
-          setQueryResult(null);
-          setQuerySteps([]);
-          setCurrentQueryStep(0);
-          setIsQuerying(false);
-          setConstructing(false);
-          setCurrentConstructStep(0);
-          setIsUpdating(false);
-          setUpdateSteps([]);
-          setCurrentUpdateStep(0);
-          if (animationTimeoutId) clearTimeout(animationTimeoutId);
-          if (queryAnimationTimeoutId) clearTimeout(queryAnimationTimeoutId);
-          if (updateAnimationTimeoutId) clearTimeout(updateAnimationTimeoutId);
-      }
-  };
+        if (currentProvince && currentDistrictName && !isNaN(currentDistrictPopulation)) {
+            setProvincesData(prevData => {
+                const newData = { ...prevData };
+                const newDistrict = { name: currentDistrictName, population: Number(currentDistrictPopulation) };
+
+                if (newData[currentProvince]) {
+                    newData[currentProvince] = [...newData[currentProvince], newDistrict];
+                } else {
+                    newData[currentProvince] = [newDistrict];
+                }
+                return newData;
+            });
+            setCurrentDistrictName('');
+            setCurrentDistrictPopulation('');
+            resetTreeState();
+        }
+    };
 
     useEffect(() => {
         const newLocations = [];
@@ -230,20 +235,16 @@ const SegmentTreeD3 = () => {
     }, [provincesData]);
 
     const handleBuildTree = () => {
-      if (locations.length === 0) return;
-      setTreeBuilt(false);
-      setNodes([]);
-      setSteps([]);
-      setCurrentConstructStep(0);
-      setConstructing(true);
-      if (animationTimeoutId) clearTimeout(animationTimeoutId);
-      const arr = locations.map((loc) => loc.population);
-      const newNodes = [];
-      const newSteps = [];
-      constructST(arr, arr.length, newNodes, newSteps, locations); // Truyền locations
-      setNodes(newNodes);
-      setSteps(newSteps);
-  };
+        if (locations.length === 0) return;
+        resetTreeState();
+        setConstructing(true);
+        const arr = locations.map((loc) => loc.population);
+        const newNodes = [];
+        const newSteps = [];
+        constructST(arr, arr.length, newNodes, newSteps, locations, treeType);
+        setNodes(newNodes);
+        setSteps(newSteps);
+    };
 
     const getNodeName = (id) => {
         const node = nodes.find(n => n.id === id);
@@ -286,7 +287,7 @@ const SegmentTreeD3 = () => {
 
         const highlightSteps = [];
         const visitedNodes = new Set();
-        const result = querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, 0, [], visitedNodes);
+        const result = querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType);
         setQueryResult(result);
         setQuerySteps(highlightSteps);
         setCurrentQueryStep(0);
@@ -298,11 +299,11 @@ const SegmentTreeD3 = () => {
                 setCurrentQueryStep(prev => prev + 1);
             }, queryAnimationDelay);
             setQueryAnimationTimeoutId(timeoutId);
-        } else if (isQuerying && currentQueryStep === querySteps.length && queryResult !== null) {
+        } else if (isQuerying && currentQueryStep === querySteps.length) {
             setIsQuerying(false);
         }
         return () => clearTimeout(queryAnimationTimeoutId);
-    }, [isQuerying, querySteps, currentQueryStep, queryResult, queryAnimationDelay]);
+    }, [isQuerying, querySteps, currentQueryStep, queryAnimationDelay]);
 
     const handleUpdate = () => {
         if (!treeBuilt || locations.length === 0) {
@@ -320,8 +321,6 @@ const SegmentTreeD3 = () => {
         setIsUpdating(true);
         setUpdateSteps([]);
         setCurrentUpdateStep(0);
-        const originalValue = locations[index].population;
-        const diff = value - originalValue;
         const newLocations = locations.map((loc, i) =>
             i === index ? { ...loc, population: value } : loc
         );
@@ -329,26 +328,31 @@ const SegmentTreeD3 = () => {
 
         const highlightSteps = [];
         const visitedNodes = new Set();
-        updateSTUtil(0, 0, locations.length - 1, index, diff, highlightSteps, [], visitedNodes);
+        updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType);
         setUpdateSteps(highlightSteps);
 
         // Cập nhật state nodes để re-render cây với giá trị mới
         const updatedNodes = nodes.map(node => {
-          if (node.range && node.range[0] <= index && node.range[1] >= index) {
-              if (node.range[0] === node.range[1] && node.range[0] === index) {
-                  return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
-              } else if (node.status === 'completed') {
-                  let newValue = 0;
-                  const [start, end] = node.range;
-                  for (let i = start; i <= end; i++) {
-                      newValue += newLocations[i].population;
-                  }
-                  return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
-              }
-          }
-          return node;
-      });
-      setNodes(updatedNodes);
+            if (node.range && node.range[0] <= index && node.range[1] >= index) {
+                if (node.range[0] === node.range[1] && node.range[0] === index) {
+                    return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
+                } else if (node.status === 'completed') {
+                    let newValue;
+                    const [start, end] = node.range;
+                    const relevantLocations = newLocations.slice(start, end + 1).map(loc => loc.population);
+                    if (treeType === 'sum') {
+                        newValue = relevantLocations.reduce((acc, val) => acc + val, 0);
+                    } else if (treeType === 'min') {
+                        newValue = Math.min(...relevantLocations);
+                    } else {
+                        newValue = 0;
+                    }
+                    return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
+                }
+            }
+            return node;
+        });
+        setNodes(updatedNodes);
     };
 
     useEffect(() => {
@@ -436,25 +440,32 @@ const SegmentTreeD3 = () => {
                 return d.data.name;
             });
 
-          // Thêm text cho giá trị (bên dưới)
-          nodeGroup.append('text')
-              .attr('dy', '0.5em') // Đẩy xuống dưới
-              .attr('x', 0)
-              .attr('text-anchor', 'middle')
-              .style('font-size', '9px')
-              .style('font-weight', 'bold') // In đậm giá trị (tùy chọn)
-              .text(d => {
-                  if (d.data.leafName) {
-                      const parts = d.data.leafName.split(': ');
-                      return parts[1]; // Lấy giá trị
-                  }
-                  return d.data.value !== null ? d.data.value : '';
+        // Thêm text cho giá trị (bên dưới)
+        nodeGroup.append('text')
+            .attr('dy', '0.5em') // Đẩy xuống dưới
+            .attr('x', 0)
+            .attr('text-anchor', 'middle')
+            .style('font-size', '9px')
+            .style('font-weight', 'bold') // In đậm giá trị (tùy chọn)
+            .text(d => {
+                if (d.data.leafName) {
+                    const parts = d.data.leafName.split(': ');
+                    return parts[1]; // Lấy giá trị
+                }
+                return d.data.value !== null ? d.data.value : '';
             });
-        }, [nodes, constructing, isQuerying, currentQueryStep, querySteps, currentConstructStep, steps, isUpdating, updateSteps, currentUpdateStep]);
-    
-        return (
-          <div>
+    }, [nodes, constructing, isQuerying, currentQueryStep, querySteps, currentConstructStep, steps, isUpdating, updateSteps, currentUpdateStep]);
+
+    return (
+        <div>
             <h2>Xây dựng và Truy vấn Cây Phân đoạn theo Tỉnh/Huyện</h2>
+            <div>
+                <h3>Chọn loại cây phân đoạn:</h3>
+                <select value={treeType} onChange={(e) => setTreeType(e.target.value)}>
+                    <option value="sum">Tổng</option>
+                    <option value="min">Tối thiểu</option>
+                </select>
+            </div>
             <div>
                 <h3>Nhập dữ liệu Tỉnh/Huyện</h3>
                 <input
@@ -553,7 +564,7 @@ const SegmentTreeD3 = () => {
                     )}
                     {(querySteps.length > 0 && isQuerying) && (
                         <div>
-                            <h3>🔍 Quá trình truy vấn:</h3>
+                            <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
                             <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
                             {querySteps[currentQueryStep - 1] && (
                                 <div style={{ marginTop: '10px', fontSize: '14px' }}>
@@ -571,9 +582,9 @@ const SegmentTreeD3 = () => {
                     )}
                     {(queryResult !== null && !isQuerying) && (
                         <div>
-                            <h3>Kết quả truy vấn:</h3>
+                            <h3>Kết quả truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
                             <p>
-                                Tổng dân số tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
+                                {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
                             </p>
                         </div>
                     )}
@@ -596,10 +607,10 @@ const SegmentTreeD3 = () => {
                         </div>
                     )}
                 </div>
-
-                {/* Thẻ cây (SVG) */}
-                <svg ref={svgRef} width={2000} height={800}></svg>
             </div>
+
+            {/* Thẻ cây (SVG) */}
+            <svg ref={svgRef} width={2000} height={800}></svg>
 
             <div style={{ position: 'relative', marginTop: '20px' }}>
                 {/* Nút điều khiển mở/đóng cho Truy vấn/Cập nhật */}
@@ -625,7 +636,7 @@ const SegmentTreeD3 = () => {
                     style={{
                         position: 'absolute',
                         top: '-847px',
-                        left:'28px',
+                        left: '28px',
                         opacity: isQueryUpdateExpanded ? '1' : '0',
                         visibility: isQueryUpdateExpanded ? 'visible' : 'hidden',
                         transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
@@ -635,9 +646,9 @@ const SegmentTreeD3 = () => {
                         boxShadow: '2px 2px 5px rgba(0, 0, 0, 0.1)',
                     }}
                 >
-                    {/* Phần Truy vấn tổng theo Tỉnh */}
+                    {/* Phần Truy vấn tổng/tối thiểu theo Tỉnh */}
                     <div>
-                        <h3>Truy vấn tổng theo Tỉnh</h3>
+                        <h3>Truy vấn {treeType === 'sum' ? 'tổng' : 'tối thiểu'} theo Tỉnh</h3>
                         <select ref={queryProvinceRef}>
                             <option value="">-- Chọn tỉnh --</option>
                             {Object.keys(provincesData).map(province => (
@@ -649,7 +660,7 @@ const SegmentTreeD3 = () => {
                         </button>
                         {queryResult !== null && (
                             <p>
-                                Tổng dân số tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
+                                {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
                             </p>
                         )}
                     </div>
@@ -682,7 +693,7 @@ const SegmentTreeD3 = () => {
                 </div>
             </div>
         </div>
-      );
-  };
-  
-  export default SegmentTreeD3;
+    );
+};
+
+export default SegmentTreeD3;
