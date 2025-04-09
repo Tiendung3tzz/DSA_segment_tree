@@ -46,7 +46,7 @@ function constructSTUtil(arr, ss, se, si, nodes, parent = null, steps = [], high
     if (leftNode && rightNode && leftNode.status === 'completed' && rightNode.status === 'completed') {
         currentTree[si] = combine(leftNode.value, rightNode.value, treeType);
         node.value = currentTree[si];
-        node.name = ` [${ss}:${se}] = ${currentTree[si]}`;
+        node.name =  `[${ss}:${se}] = ${currentTree[si]}`;
         node.status = 'completed';
         highlight = highlight.filter(h => h !== leftChildIndex && h !== rightChildIndex);
         steps.push({ nodes: nodes.map(n => ({ ...n })), highlight: [...highlight, si] });
@@ -79,25 +79,50 @@ function buildHierarchy(nodes) {
 
 function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType, currentTree) {
     const currentHighlight = si !== null ? [...queryPath, si] : [...queryPath];
-    const shouldHighlight = si !== null && !(se < qs || ss > qe);
-    if (shouldHighlight) {
-        highlightSteps.push({ highlight: currentHighlight.filter(val => val !== null), visited: Array.from(visitedNodes) });
-    } else if (si !== null) {
-        highlightSteps.push({ highlight: [], visited: Array.from(visitedNodes) });
-    }
+    const stepInfo = {
+        highlight: currentHighlight.filter(val => val !== null),
+        visited: Array.from(visitedNodes),
+        currentNodeRange: si !== null ? `[${ss}:${se}]` : null,
+        leftOperand: null,
+        rightOperand: null,
+        calculation: null,
+        currentValue: currentTree[si] !== undefined ? currentTree[si] : null,
+        inQueryRange: !(ss > qe || se < qs), // Thêm thông tin có nằm trong khoảng truy vấn không
+    };
+
     if (ss > qe || se < qs) {
         visitedNodes.add(si);
+        stepInfo.calculation = `[${ss}:${se}] nằm ngoài [${qs}:${qe}], đóng góp ${treeType === 'min' ? 'Infinity' : '0'}`;
+        stepInfo.currentValue = treeType === 'min' ? Infinity : 0;
+        highlightSteps.push(stepInfo);
         return treeType === 'min' ? Infinity : 0;
     }
+
     if (qs <= ss && se <= qe) {
         visitedNodes.add(si);
+        stepInfo.calculation = `[${ss}:${se}] nằm hoàn toàn trong [${qs}:${qe}], lấy giá trị ${currentTree[si]}`;
+        highlightSteps.push(stepInfo);
         return currentTree[si];
     }
+
     const mid = Math.floor((ss + se) / 2);
     visitedNodes.add(si);
-    const leftResult = querySTUtil(si * 2 + 1, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
-    const rightResult = querySTUtil(si * 2 + 2, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
-    return combine(leftResult, rightResult, treeType);
+    const leftChildIndex = si * 2 + 1;
+    const rightChildIndex = si * 2 + 2;
+
+    stepInfo.leftOperand = `query([${ss}:${mid}])`;
+    stepInfo.rightOperand = `query([${mid+1}:${se}])`;
+    highlightSteps.push(stepInfo);
+
+    const leftResult = querySTUtil(leftChildIndex, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
+    const rightResult = querySTUtil(rightChildIndex, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
+
+    const combinedResult = combine(leftResult, rightResult, treeType);
+    const updatedStepInfo = highlightSteps[highlightSteps.length - 1];
+    updatedStepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
+    updatedStepInfo.currentValue = combinedResult;
+
+    return combinedResult;
 }
 
 function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType, currentTree) {
@@ -150,7 +175,7 @@ const SegmentTreeD3 = () => {
     const [currentQueryStep, setCurrentQueryStep] = useState(0);
     const [isQuerying, setIsQuerying] = useState(false);
     const [queryAnimationTimeoutId, setQueryAnimationTimeoutId] = useState(null);
-    const [queryAnimationDelay] = useState(1500);
+    const [queryAnimationDelay] = useState(500);
 
     const [updateIndex, setUpdateIndex] = useState('');
     const [updateValue, setUpdateValue] = useState('');
@@ -286,8 +311,8 @@ const SegmentTreeD3 = () => {
 
         const highlightSteps = [];
         const visitedNodes = new Set();
-        const result = querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType, generatedTree);
-        setQueryResult(result);
+        querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType, generatedTree);
+        setQueryResult(highlightSteps[highlightSteps.length - 1]?.currentValue);
         setQuerySteps(highlightSteps);
         setCurrentQueryStep(0);
     };
@@ -407,13 +432,18 @@ const SegmentTreeD3 = () => {
         nodeGroup.append('circle')
             .attr('r', 20)
             .style('fill', d => {
-                if (isQuerying && querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id)) {
+                const isQueryHighlighted = isQuerying && querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
+                const isQueryVisited = isQuerying && querySteps[currentQueryStep - 1]?.visited.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
+                const isUpdateHighlighted = isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id);
+                const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
+
+                if (isQueryHighlighted) {
                     return '#ffeb3b'; // Màu vàng highlight truy vấn
-                } else if (isQuerying && querySteps[currentQueryStep - 1]?.visited.includes(d.data.id)) {
+                } else if (isQueryVisited) {
                     return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
-                } else if (isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id)) {
+                } else if (isUpdateHighlighted) {
                     return '#66ff00'; // Màu xanh lá highlight cập nhật
-                } else if (isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id)) {
+                } else if (isUpdateVisited) {
                     return '#00e7ff'; // Màu xám đã thăm cập nhật
                 } else if (treeBuilt) {
                     return '#a5a5a5'; // Màu sau khi xây dựng xong
@@ -540,7 +570,7 @@ const SegmentTreeD3 = () => {
                         position: 'absolute',
                         top: '-10px',
                         right: '9px', // Luôn giữ ở vị trí bên phải
-                        width: '300px',
+                        width: '350px', // Tăng chiều rộng để hiển thị thông tin đầy đủ
                         backgroundColor: '#f8f8f8',
                         border: '1px solid #ccc',
                         padding: '15px',
@@ -551,6 +581,7 @@ const SegmentTreeD3 = () => {
                         maxHeight: '400px',
                         opacity: isProcessExpanded ? '1' : '0',
                         visibility: isProcessExpanded ? 'visible' : 'hidden',
+                        fontSize: '14px', // Tăng kích thước font chữ cho dễ đọc
                     }}
                 >
                     {/* Nội dung thẻ quá trình */}
@@ -568,15 +599,31 @@ const SegmentTreeD3 = () => {
                             <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
                             <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
                             {querySteps[currentQueryStep - 1] && (
-                                <div style={{ marginTop: '10px', fontSize: '14px' }}>
+                                <div style={{ marginTop: '10px' }}>
                                     <p>
-                                        <strong>🔶 Highlight:</strong>{' '}
-                                        {querySteps[currentQueryStep - 1].highlight.map(getNodeName).join(', ')}
+                                        <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
+                                        {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
                                     </p>
-                                    <p>
-                                        <strong>🟦 Đã thăm:</strong>{' '}
-                                        {querySteps[currentQueryStep - 1].visited.map(getNodeName).join(', ')}
-                                    </p>
+                                    {querySteps[currentQueryStep - 1].leftOperand && (
+                                        <p>
+                                            <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
+                                        </p>
+                                    )}
+                                    {querySteps[currentQueryStep - 1].rightOperand && (
+                                        <p>
+                                            <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
+                                        </p>
+                                    )}
+                                    {querySteps[currentQueryStep - 1].calculation && (
+                                        <p>
+                                            <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
+                                        </p>
+                                    )}
+                                    {querySteps[currentQueryStep - 1].visited.length > 0 && (
+                                        <p>
+                                            <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -594,14 +641,12 @@ const SegmentTreeD3 = () => {
                             <h3>🔄 Quá trình cập nhật:</h3>
                             <p>Bước cập nhật: {currentUpdateStep}/{updateSteps.length}</p>
                             {updateSteps[currentUpdateStep - 1] && (
-                                <div style={{ marginTop: '10px', fontSize: '14px' }}>
+                                <div style={{ marginTop: '10px' }}>
                                     <p>
-                                        <strong>🟢 Highlight:</strong>{' '}
-                                        {updateSteps[currentUpdateStep - 1].highlight.map(getNodeName).join(', ')}
+                                        <strong>🟢 Highlight:</strong> {updateSteps[currentUpdateStep - 1].highlight.map(getNodeName).join(', ')}
                                     </p>
                                     <p>
-                                        <strong>⚪ Đã thăm:</strong>{' '}
-                                        {updateSteps[currentUpdateStep - 1].visited.map(getNodeName).join(', ')}
+                                        <strong>⚪ Đã thăm:</strong> {updateSteps[currentUpdateStep - 1].visited.map(getNodeName).join(', ')}
                                     </p>
                                 </div>
                             )}
@@ -687,7 +732,9 @@ const SegmentTreeD3 = () => {
                             onChange={(e) => setUpdateValue(e.target.value)}
                             style={{ marginLeft: '10px' }}
                         />
-                        <button onClick={handleUpdate} disabled={isUpdating || constructing || isQuerying} style={{ marginLeft: '10px' }}>
+                        <button onClick={handleUpdate}disabled={isUpdating || constructing || isQuerying}
+                            style={{ marginLeft: '10px' }}
+                        >
                             Cập nhật
                         </button>
                     </div>
