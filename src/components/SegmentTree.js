@@ -130,6 +130,7 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     // const combineStepInfo = { ...stepInfo };
     stepInfo.leftOperand = leftResult;
     stepInfo.rightOperand = rightResult;
+    // console.log('up',i,si,ss,se);
     stepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
     stepInfo.currentValue = combinedResult;
     highlightSteps.push(stepInfo);
@@ -144,6 +145,9 @@ function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedN
         highlight: currentHighlight.filter(val => val !== null), 
         visited: Array.from(visitedNodes),
         inQueryRange: !(ss > i || se < i),
+        currentValue: currentTree[si] !== undefined ? currentTree[si] : null,
+        currentNodeRange: si !== null ? `[${ss}:${se}]` : null,
+        calculation: (ss > i || se < i)?`[${i}] nằm ngoài [${ss}:${se}], lưu ${currentTree[si]}cho cập nhật ngược`:`[${i}] nằm trong [${ss}:${se}], duyệt tiếp`,
     });
     // if (shouldHighlight) {
     //     updateSteps.push({ 
@@ -156,11 +160,13 @@ function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedN
 
     if (i < ss || i > se) {
         visitedNodes.add(si);
+        updateSteps.calculation = `[${i}] nằm ngoài [${ss}:${se}], bỏ qua`;
         return;
     }
     aaa++;
     visitedNodes.add(si);
     if (ss === se) {
+        updateSteps.calculation = `${ss}:${se} = ${newValue}`;
         currentTree[si] = newValue;
     } else {
         const mid = Math.floor((ss + se) / 2);
@@ -168,13 +174,16 @@ function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedN
         updateSTUtil(si * 2 + 2, mid + 1, se, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
         const leftChildIndex = si * 2 + 1;
         const rightChildIndex = si * 2 + 2;
-        console.log('up',i,si,ss,se);
+        currentTree[si] = combine(currentTree[leftChildIndex], currentTree[rightChildIndex], treeType);
         updateSteps.push({
             highlight: currentHighlight.filter(val => val !== null), 
             visited: Array.from(visitedNodes),
-            inQueryRange: !(ss > i || se < i)
+            inQueryRange: !(ss > i || se < i),
+            currentValue: currentTree[si] !== undefined ? currentTree[si] : null,
+            currentNodeRange: si !== null ? `[${ss}:${se}]` : null,
+            calculation: `[${ss}:${se}] = ${currentTree[leftChildIndex]} ${treeType === 'sum' ? '+' : 'min'} ${currentTree[rightChildIndex]} = ${currentTree[si]}`
         });
-        currentTree[si] = combine(currentTree[leftChildIndex], currentTree[rightChildIndex], treeType);
+        console.log('up',updateSteps[updateSteps.length - 1]);
     }
 }
 
@@ -210,7 +219,7 @@ const SegmentTreeD3 = () => {
     const [updateSteps, setUpdateSteps] = useState([]);
     const [currentUpdateStep, setCurrentUpdateStep] = useState(0);
     const [updateAnimationTimeoutId, setUpdateAnimationTimeoutId] = useState(null);
-    const [updateAnimationDelay] = useState(1000);
+    const [updateAnimationDelay] = useState(1500);
 
     const [isProcessExpanded, setIsProcessExpanded] = useState(false);
     const [isQueryUpdateExpanded, setIsQueryUpdateExpanded] = useState(true); // Mặc định mở
@@ -635,40 +644,42 @@ const SegmentTreeD3 = () => {
                         )}
                     </div>
                 )}
+
                 {(querySteps.length > 0 && isQuerying) && (
-<div>
-    <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
-    <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
-    {querySteps[currentQueryStep - 1] && (
-        <div style={{ marginTop: '10px' }}>
-            <p>
-                <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
-                {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
-            </p>
-            {querySteps[currentQueryStep - 1].leftOperand !== null && (
-                <p>
-                    <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
-                </p>
-            )}
-            {querySteps[currentQueryStep - 1].rightOperand !== null && (
-                <p>
-                    <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
-                </p>
-            )}
-            {querySteps[currentQueryStep - 1].calculation && (
-                <p>
-                    <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
-                </p>
-            )}
-            {querySteps[currentQueryStep - 1].visited.length > 0 && (
-                <p>
-                    <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
-                </p>
-            )}
-        </div>
-    )}
-</div>
-)}
+                    <div>
+                        <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
+                        <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
+                        {querySteps[currentQueryStep - 1] && (
+                            <div style={{ marginTop: '10px' }}>
+                                <p>
+                                    <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
+                                    {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
+                                </p>
+                                {querySteps[currentQueryStep - 1].leftOperand !== null && (
+                                    <p>
+                                        <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
+                                    </p>
+                                )}
+                                {querySteps[currentQueryStep - 1].rightOperand !== null && (
+                                    <p>
+                                        <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
+                                    </p>
+                                )}
+                                {querySteps[currentQueryStep - 1].calculation && (
+                                    <p>
+                                        <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
+                                    </p>
+                                )}
+                                {querySteps[currentQueryStep - 1].visited.length > 0 && (
+                                    <p>
+                                        <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+                    
                 {(queryResult !== null && !isQuerying) && (
                     <div>
                         <h3>Kết quả truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
@@ -682,21 +693,35 @@ const SegmentTreeD3 = () => {
                         <strong>Tính toán:</strong> {querySteps[querySteps.length - 1].calculation}
                     </p>
                 )}
-                {(isUpdating && updateSteps.length > 0) && (
+                {(updateSteps.length > 0 && isUpdating) && (
                     <div>
-                        <h3>🔄 Quá trình cập nhật:</h3>
+                        <h3>🔍 Quá trình cập nhật ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
                         <p>Bước cập nhật: {currentUpdateStep}/{updateSteps.length}</p>
                         {updateSteps[currentUpdateStep - 1] && (
                             <div style={{ marginTop: '10px' }}>
                                 <p>
-                                    <strong>🟢 Highlight:</strong> {updateSteps[currentUpdateStep - 1].highlight.map(getNodeName).join(', ')}
+                                    <strong>Node hiện tại:</strong> {updateSteps[currentUpdateStep-1].currentNodeRange}
+                                    {updateSteps[currentUpdateStep - 1].currentValue !== null && ` = ${updateSteps[currentUpdateStep - 1].currentValue}`}
                                 </p>
-                                <p>
-                                    <strong>⚪ Đã thăm:</strong> {updateSteps[currentUpdateStep - 1].visited.map(getNodeName).join(', ')}
-                                </p>
+                                {updateSteps[currentUpdateStep - 1].calculation && (
+                                    <p>
+                                        <strong>Tính toán:</strong> {updateSteps[currentUpdateStep - 1].calculation}
+                                    </p>
+                                )}
+                                {updateSteps[currentUpdateStep - 1].visited.length > 0 && (
+                                    <p>
+                                        <strong>Đã thăm:</strong> {updateSteps[currentUpdateStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>
+                )}
+                
+                {(updateSteps[currentUpdateStep.length - 1]&& !isUpdating) && (
+                    <p>
+                        <strong>cập nhật:</strong> {updateSteps[updateSteps.length - 1].calculation}
+                    </p>
                 )}
             </div>
         </div>
