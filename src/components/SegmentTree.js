@@ -87,21 +87,27 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
         rightOperand: null,
         calculation: null,
         currentValue: currentTree[si] !== undefined ? currentTree[si] : null,
-        inQueryRange: !(ss > qe || se < qs), // Thêm thông tin có nằm trong khoảng truy vấn không
+        inQueryRange: !(ss > qe || se < qs),
     };
+    console.log(ss,se,qs,qe,stepInfo)
+
+    highlightSteps.push(stepInfo); // Ghi lại thông tin của nút hiện tại trước khi đi xuống
 
     if (ss > qe || se < qs) {
         visitedNodes.add(si);
-        stepInfo.calculation = `[${ss}:${se}] nằm ngoài [${qs}:${qe}], đóng góp ${treeType === 'min' ? 'Infinity' : '0'}`;
-        stepInfo.currentValue = treeType === 'min' ? Infinity : 0;
-        highlightSteps.push(stepInfo);
+        const outsideStepInfo = { ...stepInfo };
+        outsideStepInfo.calculation = `[${ss}:${se}] nằm ngoài [${qs}:${qe}], đóng góp ${treeType === 'min' ? 'Infinity' : '0'}`;
+        outsideStepInfo.currentValue = treeType === 'min' ? Infinity : 0;
+        highlightSteps[highlightSteps.length - 1] = outsideStepInfo; // Cập nhật bước hiện tại
         return treeType === 'min' ? Infinity : 0;
     }
 
     if (qs <= ss && se <= qe) {
         visitedNodes.add(si);
-        stepInfo.calculation = `[${ss}:${se}] nằm hoàn toàn trong [${qs}:${qe}], lấy giá trị ${currentTree[si]}`;
-        highlightSteps.push(stepInfo);
+        const insideStepInfo = { ...stepInfo };
+        insideStepInfo.calculation = `[${ss}:${se}] nằm hoàn toàn trong [${qs}:${qe}], lấy giá trị ${currentTree[si]}`;
+        insideStepInfo.currentValue = currentTree[si];
+        highlightSteps[highlightSteps.length - 1] = insideStepInfo; // Cập nhật bước hiện tại
         return currentTree[si];
     }
 
@@ -110,17 +116,16 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     const leftChildIndex = si * 2 + 1;
     const rightChildIndex = si * 2 + 2;
 
-    stepInfo.leftOperand = `query([${ss}:${mid}])`;
-    stepInfo.rightOperand = `query([${mid+1}:${se}])`;
-    highlightSteps.push(stepInfo);
-
     const leftResult = querySTUtil(leftChildIndex, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
     const rightResult = querySTUtil(rightChildIndex, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
 
     const combinedResult = combine(leftResult, rightResult, treeType);
-    const updatedStepInfo = highlightSteps[highlightSteps.length - 1];
-    updatedStepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
-    updatedStepInfo.currentValue = combinedResult;
+    const combineStepInfo = { ...stepInfo };
+    combineStepInfo.leftOperand = leftResult;
+    combineStepInfo.rightOperand = rightResult;
+    combineStepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
+    combineStepInfo.currentValue = combinedResult;
+    highlightSteps[highlightSteps.length - 1] = combineStepInfo; // Cập nhật bước hiện tại với thông tin hợp nhất
 
     return combinedResult;
 }
@@ -175,7 +180,7 @@ const SegmentTreeD3 = () => {
     const [currentQueryStep, setCurrentQueryStep] = useState(0);
     const [isQuerying, setIsQuerying] = useState(false);
     const [queryAnimationTimeoutId, setQueryAnimationTimeoutId] = useState(null);
-    const [queryAnimationDelay] = useState(500);
+    const [queryAnimationDelay] = useState(2500);
 
     const [updateIndex, setUpdateIndex] = useState('');
     const [updateValue, setUpdateValue] = useState('');
@@ -432,12 +437,16 @@ const SegmentTreeD3 = () => {
         nodeGroup.append('circle')
             .attr('r', 20)
             .style('fill', d => {
+
                 const isQueryHighlighted = isQuerying && querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
+                console.log('----',isQuerying, querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id), querySteps[currentQueryStep - 1]?.inQueryRange)
                 const isQueryVisited = isQuerying && querySteps[currentQueryStep - 1]?.visited.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
+                console.log('++++',isQuerying, querySteps[currentQueryStep - 1]?.visited.includes(d.data.id), querySteps[currentQueryStep - 1]?.inQueryRange)
                 const isUpdateHighlighted = isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id);
                 const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
 
                 if (isQueryHighlighted) {
+                    console.log('highlight',d.data.id)
                     return '#ffeb3b'; // Màu vàng highlight truy vấn
                 } else if (isQueryVisited) {
                     return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
@@ -595,39 +604,39 @@ const SegmentTreeD3 = () => {
                         </div>
                     )}
                     {(querySteps.length > 0 && isQuerying) && (
-                        <div>
-                            <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
-                            <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
-                            {querySteps[currentQueryStep - 1] && (
-                                <div style={{ marginTop: '10px' }}>
-                                    <p>
-                                        <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
-                                        {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
-                                    </p>
-                                    {querySteps[currentQueryStep - 1].leftOperand && (
-                                        <p>
-                                            <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
-                                        </p>
-                                    )}
-                                    {querySteps[currentQueryStep - 1].rightOperand && (
-                                        <p>
-                                            <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
-                                        </p>
-                                    )}
-                                    {querySteps[currentQueryStep - 1].calculation && (
-                                        <p>
-                                            <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
-                                        </p>
-                                    )}
-                                    {querySteps[currentQueryStep - 1].visited.length > 0 && (
-                                        <p>
-                                            <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
-                                        </p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
+    <div>
+        <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
+        <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
+        {querySteps[currentQueryStep - 1] && (
+            <div style={{ marginTop: '10px' }}>
+                <p>
+                    <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
+                    {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
+                </p>
+                {querySteps[currentQueryStep - 1].leftOperand !== null && (
+                    <p>
+                        <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
+                    </p>
+                )}
+                {querySteps[currentQueryStep - 1].rightOperand !== null && (
+                    <p>
+                        <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
+                    </p>
+                )}
+                {querySteps[currentQueryStep - 1].calculation && (
+                    <p>
+                        <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
+                    </p>
+                )}
+                {querySteps[currentQueryStep - 1].visited.length > 0 && (
+                    <p>
+                        <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
+                    </p>
+                )}
+            </div>
+        )}
+    </div>
+)}
                     {(queryResult !== null && !isQuerying) && (
                         <div>
                             <h3>Kết quả truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
@@ -635,6 +644,11 @@ const SegmentTreeD3 = () => {
                                 {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
                             </p>
                         </div>
+                    )}
+                    {(querySteps[querySteps.length - 1]&& !isQuerying) && (
+                        <p>
+                            <strong>Tính toán:</strong> {querySteps[querySteps.length - 1].calculation}
+                        </p>
                     )}
                     {(isUpdating && updateSteps.length > 0) && (
                         <div>
