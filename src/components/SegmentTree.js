@@ -132,6 +132,7 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     stepInfo.rightOperand = rightResult;
     stepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
     stepInfo.currentValue = combinedResult;
+    highlightSteps.push(stepInfo);
     // highlightSteps[highlightSteps.length - 1] = stepInfo;
     return combinedResult;
 }
@@ -334,18 +335,8 @@ const SegmentTreeD3 = () => {
 
     useEffect(() => {
         if (isQuerying && querySteps.length > 0 && currentQueryStep < querySteps.length) {
-            const currentStep = querySteps[currentQueryStep];
-            console.log("DEBUG: Bước truy vấn", querySteps);
             const timeoutId = setTimeout(() => {
                 setCurrentQueryStep(prev => prev + 1);
-                // Cập nhật màu cho node hiện tại
-                if (currentStep.nodeId !== null) {
-                    console.log("DEBUG: Cập nhật màu", currentStep.nodeId, currentStep.inQueryRange);
-                    setNodeColors(prevColors => ({
-                        ...prevColors,
-                        [currentStep.nodeId]: currentStep.inQueryRange ? '#00e7ff' : '#f44336'
-                    }));
-                }
             }, queryAnimationDelay);
             setQueryAnimationTimeoutId(timeoutId);
         } else if (isQuerying && currentQueryStep === querySteps.length) {
@@ -469,7 +460,7 @@ const SegmentTreeD3 = () => {
             const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
 
             if (isQueryHighlighted) {
-                return '#ffeb3b'; // Màu vàng highlight truy vấn
+                return querySteps[currentQueryStep - 1].inQueryRange ? '#00e7ff' : '#f44336';; // Màu vàng highlight truy vấn
             } else if (isQueryVisited) {
                 return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
             } else if (isInQueryRange) {
