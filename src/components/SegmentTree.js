@@ -110,11 +110,11 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
         stepInfo.currentValue = currentTree[si];
         highlightSteps[highlightSteps.length - 1] = stepInfo;
         
-        console.log(ss, se, qs, qe, 'hight',stepInfo,'-----',i,'-----');
-        console.log(si, 'step',stepInfo,'-----------');
-        if(ss===se){
-            console.log('ss===se',currentTree[si]);
-        }
+        // console.log(ss, se, qs, qe, 'hight',stepInfo,'-----',i,'-----');
+        // console.log(si, 'step',stepInfo,'-----------');
+        // if(ss===se){
+        //     console.log('ss===se',currentTree[si]);
+        // }
         return currentTree[si];
     }
 
@@ -137,20 +137,28 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     return combinedResult;
 }
 
-function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType, currentTree) {
+function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedNodes, treeType, currentTree,aaa) {
     const currentHighlight = si !== null ? [...updatePath, si] : [...updatePath];
-    const shouldHighlight = si !== null && (i >= ss && i <= se);
-    if (shouldHighlight) {
-        updateSteps.push({ highlight: currentHighlight.filter(val => val !== null), visited: Array.from(visitedNodes) });
-    } else if (si !== null) {
-        updateSteps.push({ highlight: [], visited: Array.from(visitedNodes) });
-    }
+    
+    updateSteps.push({ 
+        highlight: currentHighlight.filter(val => val !== null), 
+        visited: Array.from(visitedNodes),
+        inQueryRange: !(ss > i || se < i),
+    });
+    // if (shouldHighlight) {
+    //     updateSteps.push({ 
+    //         highlight: currentHighlight.filter(val => val !== null), 
+    //         visited: Array.from(visitedNodes) });
+    // } else if (si !== null) {
+    //     updateSteps.push({ highlight: [], visited: Array.from(visitedNodes) });
+        
+    // }
 
     if (i < ss || i > se) {
         visitedNodes.add(si);
         return;
     }
-
+    aaa++;
     visitedNodes.add(si);
     if (ss === se) {
         currentTree[si] = newValue;
@@ -160,6 +168,12 @@ function updateSTUtil(si, ss, se, i, newValue, updateSteps, updatePath, visitedN
         updateSTUtil(si * 2 + 2, mid + 1, se, i, newValue, updateSteps, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
         const leftChildIndex = si * 2 + 1;
         const rightChildIndex = si * 2 + 2;
+        console.log('up',i,si,ss,se);
+        updateSteps.push({
+            highlight: currentHighlight.filter(val => val !== null), 
+            visited: Array.from(visitedNodes),
+            inQueryRange: !(ss > i || se < i)
+        });
         currentTree[si] = combine(currentTree[leftChildIndex], currentTree[rightChildIndex], treeType);
     }
 }
@@ -328,7 +342,7 @@ const SegmentTreeD3 = () => {
         const visitedNodes = new Set();
         querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType, generatedTree);
         setQueryResult(highlightSteps[highlightSteps.length - 1]?.currentValue);
-        console.log('--',highlightSteps)
+        // console.log('--',highlightSteps)
         setQuerySteps(highlightSteps);
         setCurrentQueryStep(0);
     };
@@ -348,81 +362,84 @@ const SegmentTreeD3 = () => {
     const handleUpdate = () => {
         if (!treeBuilt || locations.length === 0) {
             alert('Vui lòng xây dựng cây trước khi cậpnhật.');
-    return;
-    }
-    const index = parseInt(updateIndex);
-    const value = parseInt(updateValue);if (isNaN(index) || isNaN(value) || index < 0 || index >= locations.length) {
-        alert('Vui lòng nhập chỉ số và giá trị cập nhật hợp lệ.');
-        return;
-    }
-
-    setIsUpdating(true);
-    setUpdateSteps([]);
-    setCurrentUpdateStep(0);
-    const newLocations = locations.map((loc, i) =>
-        i === index ? { ...loc, population: value } : loc
-    );
-    setLocations(newLocations);
-
-    const highlightSteps = [];
-    const visitedNodes = new Set();
-    const updatedTree = [...generatedTree]; // Tạo bản sao để cập nhật
-    updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType, updatedTree);
-    setUpdateSteps(highlightSteps);
-    setGeneratedTree(updatedTree); // Cập nhật state tree
-
-    // Cập nhật state nodes để re-render cây với giá trị mới
-    const updatedNodes = nodes.map(node => {
-        if (node.range && node.range[0] <= index && node.range[1] >= index) {
-            if (node.range[0] === node.range[1] && node.range[0] === index) {
-                return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
-            } else if (node.status === 'completed') {
-                let newValue;
-                const [start, end] = node.range;
-                const relevantLocations = newLocations.slice(start, end + 1).map(loc => loc.population);
-                if (treeType === 'sum') {
-                    newValue = relevantLocations.reduce((acc, val) => acc + val, 0);
-                } else if (treeType === 'min') {
-                    newValue = Math.min(...relevantLocations);
-                } else {
-                    newValue = 0;
-                }
-                return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
-            }
+            return;
         }
-        return node;
-    });
-    setNodes(updatedNodes);
+        const index = parseInt(updateIndex);
+        const value = parseInt(updateValue);
+        if (isNaN(index) || isNaN(value) || index < 0 || index >= locations.length) {
+            alert('Vui lòng nhập chỉ số và giá trị cập nhật hợp lệ.');
+            return;
+        }
+
+        setIsUpdating(true);
+        setUpdateSteps([]);
+        setCurrentUpdateStep(0);
+        const newLocations = locations.map((loc, i) =>
+            i === index ? { ...loc, population: value } : loc
+        );
+        setLocations(newLocations);
+
+        const highlightSteps = [];
+        const visitedNodes = new Set();
+        const updatedTree = [...generatedTree]; // Tạo bản sao để cập nhật
+        const adc=10;
+        updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType, updatedTree,adc);
+        // console.log('test update',highlightSteps,'---',adc)
+        setUpdateSteps(highlightSteps);
+        setGeneratedTree(updatedTree); // Cập nhật state tree
+
+        // Cập nhật state nodes để re-render cây với giá trị mới
+        const updatedNodes = nodes.map(node => {
+            if (node.range && node.range[0] <= index && node.range[1] >= index) {
+                if (node.range[0] === node.range[1] && node.range[0] === index) {
+                    return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
+                } else if (node.status === 'completed') {
+                    let newValue;
+                    const [start, end] = node.range;
+                    const relevantLocations = newLocations.slice(start, end + 1).map(loc => loc.population);
+                    if (treeType === 'sum') {
+                        newValue = relevantLocations.reduce((acc, val) => acc + val, 0);
+                    } else if (treeType === 'min') {
+                        newValue = Math.min(...relevantLocations);
+                    } else {
+                        newValue = 0;
+                    }
+                    return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
+                }
+            }
+            return node;
+        });
+        setNodes(updatedNodes);
     };
 
     useEffect(() => {
-    if (isUpdating && updateSteps.length > 0 && currentUpdateStep < updateSteps.length) {
-        const timeoutId = setTimeout(() => {
-            setCurrentUpdateStep(prev => prev + 1);
-        }, updateAnimationDelay);
-        setUpdateAnimationTimeoutId(timeoutId);
-    } else if (isUpdating && currentUpdateStep === updateSteps.length) {
-        setIsUpdating(false);
-    }
-    return () => clearTimeout(updateAnimationTimeoutId);
+        if (isUpdating && updateSteps.length > 0 && currentUpdateStep < updateSteps.length) {
+            const timeoutId = setTimeout(() => {
+                setCurrentUpdateStep(prev => prev + 1);
+            }, updateAnimationDelay);
+            setUpdateAnimationTimeoutId(timeoutId);
+        } else if (isUpdating && currentUpdateStep === updateSteps.length) {
+            setIsUpdating(false);
+        }
+        return () => clearTimeout(updateAnimationTimeoutId);
     }, [isUpdating, updateSteps, currentUpdateStep, updateAnimationDelay]);
 
     useEffect(() => {
-    if (nodes.length === 0) return;
-    const width = 1500;
-    const height = 400;
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
+        if (nodes.length === 0) return;
+        const width = 1500;
+        const height = 400;
+        const svg = d3.select(svgRef.current);
+        svg.selectAll('*').remove();
 
-    const rootData = buildHierarchy(nodes);
-    const hierarchy = d3.hierarchy(rootData);
-    const treeLayout = d3.tree().size([width - 10, height - 15]);
-    const treeData = treeLayout(hierarchy);
+        const rootData = buildHierarchy(nodes);
+        const hierarchy = d3.hierarchy(rootData);
+        const treeLayout = d3.tree().size([width - 10, height - 15]);
+        const treeData = treeLayout(hierarchy);
 
-    const spacingX = 1;
+        const spacingX = 1;
 
-    treeData.descendants().forEach(d => {
-        d.x *= spacingX;
+        treeData.descendants().forEach(d => {
+            d.x *= spacingX;
     });
 
     const links = treeData.links();
@@ -458,17 +475,18 @@ const SegmentTreeD3 = () => {
 
             const isUpdateHighlighted = isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id);
             const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
-
+            
             if (isQueryHighlighted) {
-                return querySteps[currentQueryStep - 1].inQueryRange ? '#00e7ff' : '#f44336';; // Màu vàng highlight truy vấn
+                return querySteps[currentQueryStep -1].inQueryRange?'#00e7ff':'#f44336'; // Màu vàng highlight truy vấn
             } else if (isQueryVisited) {
                 return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
             } else if (isInQueryRange) {
                 return '#00e7ff'; // Màu xanh dương cho các node đang được xem xét trong vùng truy vấn
             } else if (isUpdateHighlighted) {
-                return '#66ff00'; // Màu xanh lá highlight cập nhật
+                console.log('isUpdateHighlighted',updateSteps[currentUpdateStep -1]);
+                return updateSteps[currentUpdateStep -1].inQueryRange?'#66ff00':'#f44336';; // Màu xanh lá highlight cập nhật
             } else if (isUpdateVisited) {
-                return '#00e7ff'; // Màu xám đã thăm cập nhật
+                return '#f44336'; // Màu xám đã thăm cập nhật
             } else if (treeBuilt) {
                 return '#a5a5a5'; // Màu sau khi xây dựng xong
             } else {
