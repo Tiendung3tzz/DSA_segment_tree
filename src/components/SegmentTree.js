@@ -77,7 +77,7 @@ function buildHierarchy(nodes) {
     return root;
 }
 
-function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType, currentTree) {
+function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPath, visitedNodes, treeType, currentTree,i=0) {
     const currentHighlight = si !== null ? [...queryPath, si] : [...queryPath];
     const stepInfo = {
         highlight: currentHighlight.filter(val => val !== null),
@@ -88,26 +88,33 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
         calculation: null,
         currentValue: currentTree[si] !== undefined ? currentTree[si] : null,
         inQueryRange: !(ss > qe || se < qs),
+        nodeId: si // Thêm ID của node
     };
-    console.log(ss,se,qs,qe,stepInfo)
-
-    highlightSteps.push(stepInfo); // Ghi lại thông tin của nút hiện tại trước khi đi xuống
+    highlightSteps.push(stepInfo);
+    // console.log(ss, se, qs, qe, 'Hignotcheck',highlightSteps[highlightSteps.length - 1],'-----');
 
     if (ss > qe || se < qs) {
         visitedNodes.add(si);
-        const outsideStepInfo = { ...stepInfo };
-        outsideStepInfo.calculation = `[${ss}:${se}] nằm ngoài [${qs}:${qe}], đóng góp ${treeType === 'min' ? 'Infinity' : '0'}`;
-        outsideStepInfo.currentValue = treeType === 'min' ? Infinity : 0;
-        highlightSteps[highlightSteps.length - 1] = outsideStepInfo; // Cập nhật bước hiện tại
+        
+        // const outsideStepInfo = { ...stepInfo };
+        stepInfo.calculation = `[${ss}:${se}] nằm ngoài [${qs}${qe}], đóng góp ${treeType === 'min' ? 'Infinity' : '0'}`;
+        stepInfo.currentValue = treeType === 'min' ? Infinity : 0;
+        highlightSteps[highlightSteps.length - 1] = stepInfo;
         return treeType === 'min' ? Infinity : 0;
     }
 
     if (qs <= ss && se <= qe) {
         visitedNodes.add(si);
-        const insideStepInfo = { ...stepInfo };
-        insideStepInfo.calculation = `[${ss}:${se}] nằm hoàn toàn trong [${qs}:${qe}], lấy giá trị ${currentTree[si]}`;
-        insideStepInfo.currentValue = currentTree[si];
-        highlightSteps[highlightSteps.length - 1] = insideStepInfo; // Cập nhật bước hiện tại
+        // const insideStepInfo = { ...stepInfo };
+        stepInfo.calculation = `[${ss}:${se}] nằm hoàn toàn trong [${qs}${qe}], lấy giá trị ${currentTree[si]}`;
+        stepInfo.currentValue = currentTree[si];
+        highlightSteps[highlightSteps.length - 1] = stepInfo;
+        
+        console.log(ss, se, qs, qe, 'hight',stepInfo,'-----',i,'-----');
+        console.log(si, 'step',stepInfo,'-----------');
+        if(ss===se){
+            console.log('ss===se',currentTree[si]);
+        }
         return currentTree[si];
     }
 
@@ -116,17 +123,16 @@ function querySTUtil(si, ss, se, qs, qe, highlightSteps, currentResult, queryPat
     const leftChildIndex = si * 2 + 1;
     const rightChildIndex = si * 2 + 2;
 
-    const leftResult = querySTUtil(leftChildIndex, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
-    const rightResult = querySTUtil(rightChildIndex, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree);
+    const leftResult = querySTUtil(leftChildIndex, ss, mid, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree,i);
+    const rightResult = querySTUtil(rightChildIndex, mid + 1, se, qs, qe, highlightSteps, currentResult, currentHighlight, new Set([...visitedNodes]), treeType, currentTree,i);
 
     const combinedResult = combine(leftResult, rightResult, treeType);
-    const combineStepInfo = { ...stepInfo };
-    combineStepInfo.leftOperand = leftResult;
-    combineStepInfo.rightOperand = rightResult;
-    combineStepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
-    combineStepInfo.currentValue = combinedResult;
-    highlightSteps[highlightSteps.length - 1] = combineStepInfo; // Cập nhật bước hiện tại với thông tin hợp nhất
-
+    // const combineStepInfo = { ...stepInfo };
+    stepInfo.leftOperand = leftResult;
+    stepInfo.rightOperand = rightResult;
+    stepInfo.calculation = `[${ss}:${se}] = ${leftResult} ${treeType === 'sum' ? '+' : 'min'} ${rightResult} = ${combinedResult}`;
+    stepInfo.currentValue = combinedResult;
+    // highlightSteps[highlightSteps.length - 1] = stepInfo;
     return combinedResult;
 }
 
@@ -172,6 +178,7 @@ const SegmentTreeD3 = () => {
     const [constructionDelay] = useState(150);
     const [treeType, setTreeType] = useState('sum'); // Default tree type is sum
     const [generatedTree, setGeneratedTree] = useState([]); // State để lưu trữ mảng tree đã tạo
+    const [nodeColors, setNodeColors] = useState({}); // State để lưu màu của từng node trong truy vấn
 
     const svgRef = useRef();
     const queryProvinceRef = useRef(null);
@@ -180,7 +187,7 @@ const SegmentTreeD3 = () => {
     const [currentQueryStep, setCurrentQueryStep] = useState(0);
     const [isQuerying, setIsQuerying] = useState(false);
     const [queryAnimationTimeoutId, setQueryAnimationTimeoutId] = useState(null);
-    const [queryAnimationDelay] = useState(2500);
+    const [queryAnimationDelay] = useState(1500);
 
     const [updateIndex, setUpdateIndex] = useState('');
     const [updateValue, setUpdateValue] = useState('');
@@ -188,7 +195,7 @@ const SegmentTreeD3 = () => {
     const [updateSteps, setUpdateSteps] = useState([]);
     const [currentUpdateStep, setCurrentUpdateStep] = useState(0);
     const [updateAnimationTimeoutId, setUpdateAnimationTimeoutId] = useState(null);
-    const [updateAnimationDelay] = useState(1500);
+    const [updateAnimationDelay] = useState(1000);
 
     const [isProcessExpanded, setIsProcessExpanded] = useState(false);
     const [isQueryUpdateExpanded, setIsQueryUpdateExpanded] = useState(true); // Mặc định mở
@@ -206,7 +213,8 @@ const SegmentTreeD3 = () => {
         setIsUpdating(false);
         setUpdateSteps([]);
         setCurrentUpdateStep(0);
-        setGeneratedTree([]); // Reset mảng tree
+        setGeneratedTree([]);
+        setNodeColors({}); // Reset màu node
         if (animationTimeoutId) clearTimeout(animationTimeoutId);
         if (queryAnimationTimeoutId) clearTimeout(queryAnimationTimeoutId);
         if (updateAnimationTimeoutId) clearTimeout(updateAnimationTimeoutId);
@@ -312,20 +320,32 @@ const SegmentTreeD3 = () => {
         setQueryResult(null);
         setQuerySteps([]);
         setCurrentQueryStep(0);
+        setNodeColors({}); // Reset colors
         setIsQuerying(true);
 
         const highlightSteps = [];
         const visitedNodes = new Set();
         querySTUtil(0, 0, locations.length - 1, startIndex, endIndex, highlightSteps, treeType === 'min' ? Infinity : 0, [], visitedNodes, treeType, generatedTree);
         setQueryResult(highlightSteps[highlightSteps.length - 1]?.currentValue);
+        console.log('--',highlightSteps)
         setQuerySteps(highlightSteps);
         setCurrentQueryStep(0);
     };
 
     useEffect(() => {
         if (isQuerying && querySteps.length > 0 && currentQueryStep < querySteps.length) {
+            const currentStep = querySteps[currentQueryStep];
+            console.log("DEBUG: Bước truy vấn", querySteps);
             const timeoutId = setTimeout(() => {
                 setCurrentQueryStep(prev => prev + 1);
+                // Cập nhật màu cho node hiện tại
+                if (currentStep.nodeId !== null) {
+                    console.log("DEBUG: Cập nhật màu", currentStep.nodeId, currentStep.inQueryRange);
+                    setNodeColors(prevColors => ({
+                        ...prevColors,
+                        [currentStep.nodeId]: currentStep.inQueryRange ? '#00e7ff' : '#f44336'
+                    }));
+                }
             }, queryAnimationDelay);
             setQueryAnimationTimeoutId(timeoutId);
         } else if (isQuerying && currentQueryStep === querySteps.length) {
@@ -336,426 +356,429 @@ const SegmentTreeD3 = () => {
 
     const handleUpdate = () => {
         if (!treeBuilt || locations.length === 0) {
-            alert('Vui lòng xây dựng cây trước khi cập nhật.');
-            return;
-        }
-        const index = parseInt(updateIndex);
-        const value = parseInt(updateValue);
+            alert('Vui lòng xây dựng cây trước khi cậpnhật.');
+    return;
+    }
+    const index = parseInt(updateIndex);
+    const value = parseInt(updateValue);if (isNaN(index) || isNaN(value) || index < 0 || index >= locations.length) {
+        alert('Vui lòng nhập chỉ số và giá trị cập nhật hợp lệ.');
+        return;
+    }
 
-        if (isNaN(index) || isNaN(value) || index < 0 || index >= locations.length) {
-            alert('Vui lòng nhập chỉ số và giá trị cập nhật hợp lệ.');
-            return;
-        }
+    setIsUpdating(true);
+    setUpdateSteps([]);
+    setCurrentUpdateStep(0);
+    const newLocations = locations.map((loc, i) =>
+        i === index ? { ...loc, population: value } : loc
+    );
+    setLocations(newLocations);
 
-        setIsUpdating(true);
-        setUpdateSteps([]);
-        setCurrentUpdateStep(0);
-        const newLocations = locations.map((loc, i) =>
-            i === index ? { ...loc, population: value } : loc
-        );
-        setLocations(newLocations);
+    const highlightSteps = [];
+    const visitedNodes = new Set();
+    const updatedTree = [...generatedTree]; // Tạo bản sao để cập nhật
+    updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType, updatedTree);
+    setUpdateSteps(highlightSteps);
+    setGeneratedTree(updatedTree); // Cập nhật state tree
 
-        const highlightSteps = [];
-        const visitedNodes = new Set();
-        const updatedTree = [...generatedTree]; // Tạo bản sao để cập nhật
-        updateSTUtil(0, 0, locations.length - 1, index, value, highlightSteps, [], visitedNodes, treeType, updatedTree);
-        setUpdateSteps(highlightSteps);
-        setGeneratedTree(updatedTree); // Cập nhật state tree
-
-        // Cập nhật state nodes để re-render cây với giá trị mới
-        const updatedNodes = nodes.map(node => {
-            if (node.range && node.range[0] <= index && node.range[1] >= index) {
-                if (node.range[0] === node.range[1] && node.range[0] === index) {
-                    return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
-                } else if (node.status === 'completed') {
-                    let newValue;
-                    const [start, end] = node.range;
-                    const relevantLocations = newLocations.slice(start, end + 1).map(loc => loc.population);
-                    if (treeType === 'sum') {
-                        newValue = relevantLocations.reduce((acc, val) => acc + val, 0);
-                    } else if (treeType === 'min') {
-                        newValue = Math.min(...relevantLocations);
-                    } else {
-                        newValue = 0;
-                    }
-                    return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
+    // Cập nhật state nodes để re-render cây với giá trị mới
+    const updatedNodes = nodes.map(node => {
+        if (node.range && node.range[0] <= index && node.range[1] >= index) {
+            if (node.range[0] === node.range[1] && node.range[0] === index) {
+                return { ...node, value: value, name: `[${index}] = ${value}`, leafName: `${newLocations[index].name}: ${newLocations[index].population}` };
+            } else if (node.status === 'completed') {
+                let newValue;
+                const [start, end] = node.range;
+                const relevantLocations = newLocations.slice(start, end + 1).map(loc => loc.population);
+                if (treeType === 'sum') {
+                    newValue = relevantLocations.reduce((acc, val) => acc + val, 0);
+                } else if (treeType === 'min') {
+                    newValue = Math.min(...relevantLocations);
+                } else {
+                    newValue = 0;
                 }
+                return { ...node, value: newValue, name: `[${start}:${end}] = ${newValue}` };
             }
-            return node;
-        });
-        setNodes(updatedNodes);
+        }
+        return node;
+    });
+    setNodes(updatedNodes);
     };
 
     useEffect(() => {
-        if (isUpdating && updateSteps.length > 0 && currentUpdateStep < updateSteps.length) {
-            const timeoutId = setTimeout(() => {
-                setCurrentUpdateStep(prev => prev + 1);
-            }, updateAnimationDelay);
-            setUpdateAnimationTimeoutId(timeoutId);
-        } else if (isUpdating && currentUpdateStep === updateSteps.length) {
-            setIsUpdating(false);
-        }
-        return () => clearTimeout(updateAnimationTimeoutId);
+    if (isUpdating && updateSteps.length > 0 && currentUpdateStep < updateSteps.length) {
+        const timeoutId = setTimeout(() => {
+            setCurrentUpdateStep(prev => prev + 1);
+        }, updateAnimationDelay);
+        setUpdateAnimationTimeoutId(timeoutId);
+    } else if (isUpdating && currentUpdateStep === updateSteps.length) {
+        setIsUpdating(false);
+    }
+    return () => clearTimeout(updateAnimationTimeoutId);
     }, [isUpdating, updateSteps, currentUpdateStep, updateAnimationDelay]);
 
     useEffect(() => {
-        if (nodes.length === 0) return;
-        const width = 1500;
-        const height = 400;
-        const svg = d3.select(svgRef.current);
-        svg.selectAll('*').remove();
+    if (nodes.length === 0) return;
+    const width = 1500;
+    const height = 400;
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
 
-        const rootData = buildHierarchy(nodes);
-        const hierarchy = d3.hierarchy(rootData);
-        const treeLayout = d3.tree().size([width - 10, height - 15]);
-        const treeData = treeLayout(hierarchy);
+    const rootData = buildHierarchy(nodes);
+    const hierarchy = d3.hierarchy(rootData);
+    const treeLayout = d3.tree().size([width - 10, height - 15]);
+    const treeData = treeLayout(hierarchy);
 
-        const spacingX = 1; // Tăng khoảng cách ngang (thử các giá trị khác nhau)
+    const spacingX = 1;
 
-        treeData.descendants().forEach(d => {
-            d.x *= spacingX;
-        });
+    treeData.descendants().forEach(d => {
+        d.x *= spacingX;
+    });
 
-        const links = treeData.links();
-        svg.selectAll('.link')
-            .data(links)
-            .enter().append('path')
-            .attr('class', 'link')
-            .attr('d', d3.linkVertical()
-                .x(d => d.x + 30)
-                .y(d => d.y + 30))
-            .style('fill', 'none')
-            .style('stroke', '#ccc')
-            .style('stroke-width', 1);
+    const links = treeData.links();
+    svg.selectAll('.link')
+        .data(links)
+        .enter().append('path')
+        .attr('class', 'link')
+        .attr('d', d3.linkVertical()
+            .x(d => d.x + 30)
+            .y(d => d.y + 30))
+        .style('fill', 'none')
+        .style('stroke', '#ccc')
+        .style('stroke-width', 1);
 
-        const nodeGroup = svg.selectAll('.node')
-            .data(treeData.descendants())
-            .enter().append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${d.x + 30}, ${d.y + 30})`);
+    const nodeGroup = svg.selectAll('.node')
+        .data(treeData.descendants())
+        .enter().append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.x + 30}, ${d.y + 30})`);
 
         nodeGroup.append('circle')
-            .attr('r', 20)
-            .style('fill', d => {
+        .attr('r', 20)
+        .style('fill', d => {
+            // Ưu tiên màu sắc từ quá trình truy vấn
+            if (nodeColors[d.data.id]) {
+                return nodeColors[d.data.id];
+            }
 
-                const isQueryHighlighted = isQuerying && querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
-                console.log('----',isQuerying, querySteps[currentQueryStep - 1]?.highlight.includes(d.data.id), querySteps[currentQueryStep - 1]?.inQueryRange)
-                const isQueryVisited = isQuerying && querySteps[currentQueryStep - 1]?.visited.includes(d.data.id) && querySteps[currentQueryStep - 1]?.inQueryRange;
-                console.log('++++',isQuerying, querySteps[currentQueryStep - 1]?.visited.includes(d.data.id), querySteps[currentQueryStep - 1]?.inQueryRange)
-                const isUpdateHighlighted = isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id);
-                const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
+            const currentQueryStepData = querySteps[currentQueryStep - 1];
+            const isQueryHighlighted = isQuerying && currentQueryStepData?.highlight.includes(d.data.id);
+            const isQueryVisited = isQuerying && currentQueryStepData?.visited.includes(d.data.id);
+            const isInQueryRange = isQuerying && currentQueryStepData?.inQueryRange && d.data.id === currentQueryStepData?.nodeId; // Kiểm tra xem node hiện tại có trong vùng truy vấn ở bước này
 
-                if (isQueryHighlighted) {
-                    console.log('highlight',d.data.id)
-                    return '#ffeb3b'; // Màu vàng highlight truy vấn
-                } else if (isQueryVisited) {
-                    return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
-                } else if (isUpdateHighlighted) {
-                    return '#66ff00'; // Màu xanh lá highlight cập nhật
-                } else if (isUpdateVisited) {
-                    return '#00e7ff'; // Màu xám đã thăm cập nhật
-                } else if (treeBuilt) {
-                    return '#a5a5a5'; // Màu sau khi xây dựng xong
-                } else {
-                    return constructing ? (d.data.status === 'completed' ? '#ff9800' : (d.data.status === 'calculating' ? '#f44336' : '#f0f0f0')) : '#f0f0f0';
-                }
-            })
-            .style('stroke', '#333')
-            .style('stroke-width', 1);
+            const isUpdateHighlighted = isUpdating && updateSteps[currentUpdateStep - 1]?.highlight.includes(d.data.id);
+            const isUpdateVisited = isUpdating && updateSteps[currentUpdateStep - 1]?.visited.includes(d.data.id);
 
-        // Thêm text cho tên node (bên trên)
-        nodeGroup.append('text')
-            .attr('dy', '-2.2em') // Đẩy lên trên
-            .attr('x', 0)
-            .attr('text-anchor', 'middle')
-            .style('font-size', '9px')
-            .text(d => {
-                if (d.data.leafName) {
-                    const parts = d.data.leafName.split(': ');
-                    return parts[0]; // Lấy tên
-                }
-                if (d.data.name && d.data.name.includes('=')) {
-                    return d.data.name.split('=')[0].trim(); // Lấy phần trước dấu bằng và loại bỏ khoảng trắng
-                }
-                return d.data.name;
-            });
+            if (isQueryHighlighted) {
+                return '#ffeb3b'; // Màu vàng highlight truy vấn
+            } else if (isQueryVisited) {
+                return '#00e7ff'; // Màu xanh dương đã thăm truy vấn
+            } else if (isInQueryRange) {
+                return '#00e7ff'; // Màu xanh dương cho các node đang được xem xét trong vùng truy vấn
+            } else if (isUpdateHighlighted) {
+                return '#66ff00'; // Màu xanh lá highlight cập nhật
+            } else if (isUpdateVisited) {
+                return '#00e7ff'; // Màu xám đã thăm cập nhật
+            } else if (treeBuilt) {
+                return '#a5a5a5'; // Màu sau khi xây dựng xong
+            } else {
+                return constructing ? (d.data.status === 'completed' ? '#ff9800' : (d.data.status === 'calculating' ? '#f44336' : '#f0f0f0')) : '#f0f0f0';
+            }
+        })
+        .style('stroke', '#333')
+        .style('stroke-width', 1);
 
-        // Thêm text cho giá trị (bên dưới)
-        nodeGroup.append('text')
-            .attr('dy', '0.5em') // Đẩy xuống dưới
-            .attr('x', 0)
-            .attr('text-anchor', 'middle')
-            .style('font-size', '9px')
-            .style('font-weight', 'bold') // In đậm giá trị (tùy chọn)
-            .text(d => {
-                if (d.data.leafName) {
-                    const parts = d.data.leafName.split(': ');
-                    return parts[1]; // Lấy giá trị
-                }
-                return d.data.value !== null ? d.data.value : '';
-            });
-    }, [nodes, constructing, isQuerying, currentQueryStep, querySteps, currentConstructStep, steps, isUpdating, updateSteps, currentUpdateStep]);
+    // Thêm text cho tên node
+    nodeGroup.append('text')
+        .attr('dy', '-2.2em')
+        .attr('x', 0)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '9px')
+        .text(d => {
+            if (d.data.leafName) {
+                const parts = d.data.leafName.split(': ');
+                return parts[0];
+            }
+            if (d.data.name && d.data.name.includes('=')) {
+                return d.data.name.split('=')[0].trim();
+            }
+            return d.data.name;
+        });
 
+    // Thêm text cho giá trị
+    nodeGroup.append('text')
+        .attr('dy', '0.5em')
+        .attr('x', 0)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '9px')
+        .style('font-weight', 'bold')
+        .text(d => {
+            if (d.data.leafName) {
+                const parts = d.data.leafName.split(': ');
+                return parts[1];
+            }
+            return d.data.value !== null ? d.data.value : '';
+        });
+    }, [nodes, constructing, isQuerying, currentQueryStep, querySteps, currentConstructStep, steps, isUpdating, updateSteps, currentUpdateStep, treeBuilt, nodeColors]);
     return (
-        <div>
-            <h2>Xây dựng và Truy vấn Cây Phân đoạn theo Tỉnh/Huyện</h2>
-            <div>
-                <h3>Chọn loại cây phân đoạn:</h3>
-                <select value={treeType} onChange={(e) => setTreeType(e.target.value)}>
-                    <option value="sum">Tổng</option>
-                    <option value="min">Tối thiểu</option>
-                </select>
-            </div>
-            <div>
-                <h3>Nhập dữ liệu Tỉnh/Huyện</h3>
-                <input
-                    type="text"
-                    placeholder="Tên tỉnh"
-                    value={currentProvince}
-                    onChange={(e) => setCurrentProvince(e.target.value)}
-                />
-                <input
-                    type="text"
-                    placeholder="Tên huyện"
-                    value={currentDistrictName}
-                    onChange={(e) => setCurrentDistrictName(e.target.value)}
-                />
-                <input
-                    type="number"
-                    placeholder="Dân số huyện"
-                    value={currentDistrictPopulation}
-                    onChange={(e) => setCurrentDistrictPopulation(e.target.value)}
-                />
-                <button onClick={handleAddDistrict}>Thêm Huyện</button>
-            </div>
-            <div>
-                <h3>Tải dữ liệu từ file JSON</h3>
-                <input type="file" accept=".json" onChange={handleFileChange} />
-            </div>
-
-            {Object.keys(provincesData).length > 0 && (
-                <div>
-                    <h3>Dữ liệu đã nhập</h3>
-                    <ul>
-                        {Object.entries(provincesData).map(([province, districts]) => (
-                            <li key={province}>
-                                <strong>{province}:</strong>
-                                <ul>
-                                    {districts.map((district, index) => (
-                                        <li key={index}>{district.name}: {district.population}</li>
-                                    ))}
-                                </ul>
-                            </li>
-                        ))}
-                    </ul>
-                    <button onClick={handleBuildTree} disabled={treeBuilt || constructing || locations.length === 0}>
-                        {constructing ? 'Đang xây dựng...' : (treeBuilt ? 'Đã xây dựng cây' : 'Xây dựng cây')}
-                    </button>
-                </div>
-            )}
-
-            <div style={{ position: 'relative', marginTop: '30px' }}>
-                {/* Nút điều khiển mở/đóng */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: '-10px', // Điều chỉnh vị trí dọc
-                        right: '-10px', // Đẩy ra ngoài lề phải
-                        zIndex: 10, // Đảm bảo nút ở trên cùng
-                        cursor: 'pointer',
-                        backgroundColor: '#555', // Màu nền nút
-                        color: 'white',
-                        padding: '5px',
-                        borderRadius: '5px 0 0 5px',
-                    }}
-                    onClick={() => setIsProcessExpanded(!isProcessExpanded)}
-                >
-                    {isProcessExpanded ? '<' : '>'}
-                </div>
-
-                {/* Thẻ quá trình (ẩn/hiện dựa trên trạng thái) */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: '-10px',
-                        right: '9px', // Luôn giữ ở vị trí bên phải
-                        width: '350px', // Tăng chiều rộng để hiển thị thông tin đầy đủ
-                        backgroundColor: '#f8f8f8',
-                        border: '1px solid #ccc',
-                        padding: '15px',
-                        zIndex: 5,
-                        transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
-                        boxShadow: '2px 2px 5px rgba(0, 0, 0, 0.1)',
-                        overflowY: 'auto',
-                        maxHeight: '400px',
-                        opacity: isProcessExpanded ? '1' : '0',
-                        visibility: isProcessExpanded ? 'visible' : 'hidden',
-                        fontSize: '14px', // Tăng kích thước font chữ cho dễ đọc
-                    }}
-                >
-                    {/* Nội dung thẻ quá trình */}
-                    {(steps.length > 0 && constructing) && (
-                        <div>
-                            <h3>📊 Quá trình xây dựng:</h3>
-                            <p>Bước: {currentConstructStep}/{steps.length}</p>
-                            {steps[currentConstructStep - 1]?.highlight.length > 0 && (
-                                <p><strong>Highlight:</strong> {steps[currentConstructStep - 1].highlight.map(getNodeName).join(', ')}</p>
-                            )}
-                        </div>
-                    )}
-                    {(querySteps.length > 0 && isQuerying) && (
     <div>
-        <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
-        <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
-        {querySteps[currentQueryStep - 1] && (
-            <div style={{ marginTop: '10px' }}>
-                <p>
-                    <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
-                    {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
-                </p>
-                {querySteps[currentQueryStep - 1].leftOperand !== null && (
-                    <p>
-                        <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
-                    </p>
-                )}
-                {querySteps[currentQueryStep - 1].rightOperand !== null && (
-                    <p>
-                        <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
-                    </p>
-                )}
-                {querySteps[currentQueryStep - 1].calculation && (
-                    <p>
-                        <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
-                    </p>
-                )}
-                {querySteps[currentQueryStep - 1].visited.length > 0 && (
-                    <p>
-                        <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
-                    </p>
-                )}
+        <h2>Xây dựng và Truy vấn Cây Phân đoạn theo Tỉnh/Huyện</h2>
+        <div>
+            <h3>Chọn loại cây phân đoạn:</h3>
+            <select value={treeType} onChange={(e) => setTreeType(e.target.value)}>
+                <option value="sum">Tổng</option>
+                <option value="min">Tối thiểu</option>
+            </select>
+        </div>
+        <div>
+            <h3>Nhập dữ liệu Tỉnh/Huyện</h3>
+            <input
+                type="text"
+                placeholder="Tên tỉnh"
+                value={currentProvince}
+                onChange={(e) => setCurrentProvince(e.target.value)}
+            />
+            <input
+                type="text"
+                placeholder="Tên huyện"
+                value={currentDistrictName}
+                onChange={(e) => setCurrentDistrictName(e.target.value)}
+            />
+            <input
+                type="number"
+                placeholder="Dân số huyện"
+                value={currentDistrictPopulation}
+                onChange={(e) => setCurrentDistrictPopulation(e.target.value)}
+            />
+            <button onClick={handleAddDistrict}>Thêm Huyện</button>
+        </div>
+        <div>
+            <h3>Tải dữ liệu từ file JSON</h3>
+            <input type="file" accept=".json" onChange={handleFileChange} />
+        </div>
+
+        {Object.keys(provincesData).length > 0 && (
+            <div>
+                <h3>Dữ liệu đã nhập</h3>
+                <ul>
+                    {Object.entries(provincesData).map(([province, districts]) => (
+                        <li key={province}>
+                            <strong>{province}:</strong>
+                            <ul>
+                                {districts.map((district, index) => (
+                                    <li key={index}>{district.name}: {district.population}</li>
+                                ))}
+                            </ul>
+                        </li>
+                    ))}
+                </ul>
+                <button onClick={handleBuildTree} disabled={treeBuilt || constructing || locations.length === 0}>
+                    {constructing ? 'Đang xây dựng...' : (treeBuilt ? 'Đã xây dựng cây' : 'Xây dựng cây')}
+                </button>
             </div>
         )}
-    </div>
-)}
-                    {(queryResult !== null && !isQuerying) && (
-                        <div>
-                            <h3>Kết quả truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
-                            <p>
-                                {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
-                            </p>
-                        </div>
-                    )}
-                    {(querySteps[querySteps.length - 1]&& !isQuerying) && (
-                        <p>
-                            <strong>Tính toán:</strong> {querySteps[querySteps.length - 1].calculation}
-                        </p>
-                    )}
-                    {(isUpdating && updateSteps.length > 0) && (
-                        <div>
-                            <h3>🔄 Quá trình cập nhật:</h3>
-                            <p>Bước cập nhật: {currentUpdateStep}/{updateSteps.length}</p>
-                            {updateSteps[currentUpdateStep - 1] && (
-                                <div style={{ marginTop: '10px' }}>
-                                    <p>
-                                        <strong>🟢 Highlight:</strong> {updateSteps[currentUpdateStep - 1].highlight.map(getNodeName).join(', ')}
-                                    </p>
-                                    <p>
-                                        <strong>⚪ Đã thăm:</strong> {updateSteps[currentUpdateStep - 1].visited.map(getNodeName).join(', ')}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
+
+        <div style={{ position: 'relative', marginTop: '30px' }}>
+            {/* Nút điều khiển mở/đóng */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '-10px', // Điều chỉnh vị trí dọc
+                    right: '-10px', // Đẩy ra ngoài lề phải
+                    zIndex: 10, // Đảm bảo nút ở trên cùng
+                    cursor: 'pointer',
+                    backgroundColor: '#555', // Màu nền nút
+                    color: 'white',
+                    padding: '5px',
+                    borderRadius: '5px 0 0 5px',
+                }}
+                onClick={() => setIsProcessExpanded(!isProcessExpanded)}
+            >
+                {isProcessExpanded ? '<' : '>'}
             </div>
 
-            {/* Thẻ cây (SVG) */}
-            <svg ref={svgRef} width={2000} height={800}></svg>
-
-            <div style={{ position: 'relative', marginTop: '20px' }}>
-                {/* Nút điều khiển mở/đóng cho Truy vấn/Cập nhật */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: '-847px', // Điều chỉnh vị trí dọc
-                        left: '7px', // Đẩy ra ngoài lề phải
-                        zIndex: 10,
-                        cursor: 'pointer',
-                        backgroundColor: '#555',
-                        color: 'white',
-                        padding: '5px',
-                        borderRadius: '5px 0 0 5px',
-                    }}
-                    onClick={() => setIsQueryUpdateExpanded(!isQueryUpdateExpanded)}
-                >
-                    {isQueryUpdateExpanded ? '<' : '>'}
-                </div>
-
-                {/* Container cho Truy vấn và Cập nhật */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: '-847px',
-                        left: '28px',
-                        opacity: isQueryUpdateExpanded ? '1' : '0',
-                        visibility: isQueryUpdateExpanded ? 'visible' : 'hidden',
-                        transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
-                        padding: '15px',
-                        border: '1px solid #ccc',
-                        backgroundColor: '#f8f8f8',
-                        boxShadow: '2px 2px 5px rgba(0, 0, 0, 0.1)',
-                    }}
-                >
-                    {/* Phần Truy vấn tổng/tối thiểu theo Tỉnh */}
+            {/* Thẻ quá trình (ẩn/hiện dựa trên trạng thái) */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '-10px',
+                    right: '9px', // Luôn giữ ở vị trí bên phải
+                    width: '350px', // Tăng chiều rộng để hiển thị thông tin đầy đủ
+                    backgroundColor: '#f8f8f8',
+                    border: '1px solid #ccc',
+                    padding: '15px',
+                    zIndex: 5,
+                    transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
+                    boxShadow: '2px 2px 5px rgba(0, 0, 0, 0.1)',
+                    overflowY: 'auto',
+                    maxHeight: '400px',
+                    opacity: isProcessExpanded ? '1' : '0',
+                    visibility: isProcessExpanded ? 'visible' : 'hidden',
+                    fontSize: '14px', // Tăng kích thước font chữ cho dễ đọc
+                }}
+            >
+                {/* Nội dung thẻ quá trình */}
+                {(steps.length > 0 && constructing) && (
                     <div>
-                        <h3>Truy vấn {treeType === 'sum' ? 'tổng' : 'tối thiểu'} theo Tỉnh</h3>
-                        <select ref={queryProvinceRef}>
-                            <option value="">-- Chọn tỉnh --</option>
-                            {Object.keys(provincesData).map(province => (
-                                <option key={province} value={province}>{province}</option>
-                            ))}
-                        </select>
-                        <button onClick={handleQueryByProvince} disabled={isQuerying || constructing || isUpdating}>
-                            Truy vấn
-                        </button>
-                        {queryResult !== null && (
-                            <p>
-                                {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
-                            </p>
+                        <h3>📊 Quá trình xây dựng:</h3>
+                        <p>Bước: {currentConstructStep}/{steps.length}</p>
+                        {steps[currentConstructStep - 1]?.highlight.length > 0 && (
+                            <p><strong>Highlight:</strong> {steps[currentConstructStep - 1].highlight.map(getNodeName).join(', ')}</p>
                         )}
                     </div>
-
-                    {/* Phần Cập nhật dân số huyện */}
-                    <div style={{ marginTop: '20px' }}>
-                        <h3>Cập nhật dân số huyện</h3>
-                        <select
-                            value={updateIndex}
-                            onChange={(e) => setUpdateIndex(e.target.value)}
-                        >
-                            <option value="">-- Chọn huyện --</option>
-                            {locations.map((location, index) => (
-                                <option key={index} value={index}>
-                                    {location.name} ({location.province}) - Chỉ số: {index}
-                                </option>
-                            ))}
-                        </select>
-                        <input
-                            type="number"
-                            placeholder="Giá trị dân số mới"
-                            value={updateValue}
-                            onChange={(e) => setUpdateValue(e.target.value)}
-                            style={{ marginLeft: '10px' }}
-                        />
-                        <button onClick={handleUpdate}disabled={isUpdating || constructing || isQuerying}
-                            style={{ marginLeft: '10px' }}
-                        >
-                            Cập nhật
-                        </button>
+                )}
+                {(querySteps.length > 0 && isQuerying) && (
+<div>
+    <h3>🔍 Quá trình truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
+    <p>Bước truy vấn: {currentQueryStep}/{querySteps.length}</p>
+    {querySteps[currentQueryStep - 1] && (
+        <div style={{ marginTop: '10px' }}>
+            <p>
+                <strong>Node hiện tại:</strong> {querySteps[currentQueryStep - 1].currentNodeRange}
+                {querySteps[currentQueryStep - 1].currentValue !== null && ` = ${querySteps[currentQueryStep - 1].currentValue}`}
+            </p>
+            {querySteps[currentQueryStep - 1].leftOperand !== null && (
+                <p>
+                    <strong>➡️ Con trái:</strong> {querySteps[currentQueryStep - 1].leftOperand}
+                </p>
+            )}
+            {querySteps[currentQueryStep - 1].rightOperand !== null && (
+                <p>
+                    <strong>➡️ Con phải:</strong> {querySteps[currentQueryStep - 1].rightOperand}
+                </p>
+            )}
+            {querySteps[currentQueryStep - 1].calculation && (
+                <p>
+                    <strong>Tính toán:</strong> {querySteps[currentQueryStep - 1].calculation}
+                </p>
+            )}
+            {querySteps[currentQueryStep - 1].visited.length > 0 && (
+                <p>
+                    <strong>Đã thăm:</strong> {querySteps[currentQueryStep - 1].visited.map(id => getNodeName(id).split('=')[0].trim()).join(', ')}
+                </p>
+            )}
+        </div>
+    )}
+</div>
+)}
+                {(queryResult !== null && !isQuerying) && (
+                    <div>
+                        <h3>Kết quả truy vấn ({treeType === 'sum' ? 'Tổng' : 'Tối thiểu'}):</h3>
+                        <p>
+                            {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
+                        </p>
                     </div>
+                )}
+                {(querySteps[querySteps.length - 1]&& !isQuerying) && (
+                    <p>
+                        <strong>Tính toán:</strong> {querySteps[querySteps.length - 1].calculation}
+                    </p>
+                )}
+                {(isUpdating && updateSteps.length > 0) && (
+                    <div>
+                        <h3>🔄 Quá trình cập nhật:</h3>
+                        <p>Bước cập nhật: {currentUpdateStep}/{updateSteps.length}</p>
+                        {updateSteps[currentUpdateStep - 1] && (
+                            <div style={{ marginTop: '10px' }}>
+                                <p>
+                                    <strong>🟢 Highlight:</strong> {updateSteps[currentUpdateStep - 1].highlight.map(getNodeName).join(', ')}
+                                </p>
+                                <p>
+                                    <strong>⚪ Đã thăm:</strong> {updateSteps[currentUpdateStep - 1].visited.map(getNodeName).join(', ')}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+
+        {/* Thẻ cây (SVG) */}
+        <svg ref={svgRef} width={2000} height={800}></svg>
+
+        <div style={{ position: 'relative', marginTop: '20px' }}>
+            {/* Nút điều khiển mở/đóng cho Truy vấn/Cập nhật */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '-847px', // Điều chỉnh vị trí dọc
+                    left: '7px', // Đẩy ra ngoài lề phải
+                    zIndex: 10,
+                    cursor: 'pointer',
+                    backgroundColor: '#555',
+                    color: 'white',
+                    padding: '5px',
+                    borderRadius: '5px 0 0 5px',
+                }}
+                onClick={() => setIsQueryUpdateExpanded(!isQueryUpdateExpanded)}
+            >
+                {isQueryUpdateExpanded ? '<' : '>'}
+            </div>
+
+            {/* Container cho Truy vấn và Cập nhật */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '-847px',
+                    left: '28px',
+                    opacity: isQueryUpdateExpanded ? '1' : '0',
+                    visibility: isQueryUpdateExpanded ? 'visible' : 'hidden',
+                    transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
+                    padding: '15px',
+                    border: '1px solid #ccc',
+                    backgroundColor: '#f8f8f8',
+                    boxShadow: '2px 2px 5px rgba(0, 0, 0, 0.1)',
+                }}
+            >
+                {/* Phần Truy vấn tổng/tối thiểu theo Tỉnh */}
+                <div>
+                    <h3>Truy vấn {treeType === 'sum' ? 'tổng' : 'tối thiểu'} theo Tỉnh</h3>
+                    <select ref={queryProvinceRef}>
+                        <option value="">-- Chọn tỉnh --</option>
+                        {Object.keys(provincesData).map(province => (
+                            <option key={province} value={province}>{province}</option>
+                        ))}
+                    </select>
+                    <button onClick={handleQueryByProvince} disabled={isQuerying || constructing || isUpdating}>
+                        Truy vấn
+                    </button>
+                    {queryResult !== null && (
+                        <p>
+                            {treeType === 'sum' ? 'Tổng' : 'Giá trị tối thiểu'} của tỉnh {queryProvinceRef.current?.value}: <b>{queryResult}</b>
+                        </p>
+                    )}
+                </div>
+
+                {/* Phần Cập nhật dân số huyện */}
+                <div style={{ marginTop: '20px' }}>
+                    <h3>Cập nhật dân số huyện</h3>
+                    <select
+                        value={updateIndex}
+                        onChange={(e) => setUpdateIndex(e.target.value)}
+                    >
+                        <option value="">-- Chọn huyện --</option>
+                        {locations.map((location, index) => (
+                            <option key={index} value={index}>
+                                {location.name} ({location.province}) - Chỉ số: {index}
+                            </option>
+                        ))}
+                    </select>
+                    <input
+                        type="number"
+                        placeholder="Giá trị dân số mới"
+                        value={updateValue}
+                        onChange={(e) => setUpdateValue(e.target.value)}
+                        style={{ marginLeft: '10px' }}
+                    />
+                    <button onClick={handleUpdate}disabled={isUpdating || constructing || isQuerying}
+                        style={{ marginLeft: '10px' }}
+                    >
+                        Cập nhật
+                    </button>
                 </div>
             </div>
         </div>
-    );
+    </div>
+);
 };
 
 export default SegmentTreeD3;
